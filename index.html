@@ -86,6 +86,7 @@
         #touch-controls { display: none; }
 
         @media (pointer: coarse) {
+            #game-wrapper.touch-active:not(.touch-paused) { touch-action: none; }
             #game-wrapper.touch-active:not(.touch-paused) #touch-controls {
                 position: absolute;
                 inset: 0;
@@ -725,7 +726,7 @@
         <div style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 40px; text-align: center; line-height: 1.8;">
             <p style="color:#ddd; font-size:16px;">
                 宇宙被五大星区的霸主割裂，<br>你必须逐个击破，夺回星空控制权。<br><br>
-                <strong style="color: var(--primary);">导航:</strong> [W A S D] / 方向键 | <strong style="color: var(--warning);">开火:</strong> [空格] / [K] |
+                <strong style="color: var(--primary);">导航:</strong> 鼠标移动 / 触屏拖动 / [W A S D] | <strong style="color: var(--warning);">开火:</strong> 按住鼠标或触屏 / [空格] / [K] |
                 <strong style="color: var(--gold);">过载:</strong> [F] | <strong style="color: var(--secondary);">聚焦:</strong> [SHIFT]
             </p>
         </div>
@@ -854,7 +855,7 @@
                 <div class="pause-col">
                     <h4>操作指令</h4>
                     <p>
-                        [W A S D] / 方向键 — 机动<br>
+                        鼠标移动 / 触屏拖动 / [W A S D] — 机动<br>
                         [空格] / [K] — 主炮开火<br>
                         [SHIFT] 按住 — 专注模式 (低速精密瞄准)<br>
                         [F] — 过载冲击波 (擦弹充满能量后)<br>
@@ -1325,15 +1326,50 @@ class Drop {
 const Input = {
     touchKeys: { up: false, down: false, left: false, right: false, fire: false, q: false, e: false, f: false, focus: false, pause: false },
     touchPointers: new Map(),
+    pointer: { x: 0, y: 0, active: false, fire: false, pointers: new Map(), lastPointerType: null },
     keys: { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowLeft:false, ArrowDown:false, ArrowRight:false, " ":false, k:false, K:false,
             q:false, Q:false, e:false, E:false, f:false, F:false, Shift:false, Escape:false, p:false, P:false, m:false, M:false },
     init() {
         window.addEventListener('keydown', e => {
             AudioSys.ensureInit();
             if(this.keys.hasOwnProperty(e.key)) this.keys[e.key] = true;
+            if(['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) this.pointer.active = false;
         });
         window.addEventListener('keyup', e => { if(this.keys.hasOwnProperty(e.key)) this.keys[e.key] = false; });
         window.addEventListener('click', () => AudioSys.ensureInit(), { once: true });
+        const wrapper = document.getElementById('game-wrapper');
+        const canvas = document.getElementById('gameCanvas');
+        const isPlaying = () => GameEngine.state === STATE.PLAYING && !GameEngine.paused;
+        const updatePointer = e => {
+            const rect = canvas.getBoundingClientRect();
+            this.pointer.x = Math.max(0, Math.min(WIDTH, (e.clientX - rect.left) * WIDTH / rect.width));
+            this.pointer.y = Math.max(0, Math.min(HEIGHT, (e.clientY - rect.top) * HEIGHT / rect.height));
+            this.pointer.active = true;
+            this.pointer.lastPointerType = e.pointerType || 'mouse';
+        };
+        wrapper.addEventListener('pointermove', e => {
+            if (!isPlaying() || e.target.closest('#touch-controls')) return;
+            if (e.pointerType === 'mouse' || this.pointer.pointers.has(e.pointerId)) updatePointer(e);
+        });
+        wrapper.addEventListener('pointerdown', e => {
+            if (!isPlaying() || e.target.closest('#touch-controls')) return;
+            if (e.pointerType !== 'mouse') e.preventDefault();
+            AudioSys.ensureInit();
+            updatePointer(e);
+            this.pointer.pointers.set(e.pointerId, e.pointerType || 'mouse');
+            this.pointer.fire = true;
+            try { wrapper.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+        const releasePointer = e => {
+            if (!this.pointer.pointers.has(e.pointerId)) return;
+            const type = this.pointer.pointers.get(e.pointerId);
+            this.pointer.pointers.delete(e.pointerId);
+            this.pointer.fire = this.pointer.pointers.size > 0;
+            if (type !== 'mouse' && this.pointer.pointers.size === 0) this.pointer.active = false;
+        };
+        wrapper.addEventListener('pointerup', releasePointer);
+        wrapper.addEventListener('pointercancel', releasePointer);
+        wrapper.addEventListener('lostpointercapture', releasePointer);
         document.querySelectorAll('#touch-controls [data-input]').forEach(button => {
             button.addEventListener('pointerdown', e => {
                 e.preventDefault();
@@ -1362,9 +1398,15 @@ const Input = {
         Object.keys(this.touchKeys).forEach(action => { this.touchKeys[action] = false; });
         document.querySelectorAll('#touch-controls .is-pressed').forEach(button => button.classList.remove('is-pressed'));
     },
+    clearPointer() {
+        this.pointer.pointers.clear();
+        this.pointer.active = false;
+        this.pointer.fire = false;
+    },
+    getPointerTarget() { return this.pointer.active ? this.pointer : null; },
     isUp() { return this.keys.w || this.keys.ArrowUp || this.touchKeys.up; }, isDown() { return this.keys.s || this.keys.ArrowDown || this.touchKeys.down; },
     isLeft() { return this.keys.a || this.keys.ArrowLeft || this.touchKeys.left; }, isRight() { return this.keys.d || this.keys.ArrowRight || this.touchKeys.right; },
-    isFire() { return this.keys[" "] || this.keys.k || this.keys.K || this.touchKeys.fire; },
+    isFire() { return this.keys[" "] || this.keys.k || this.keys.K || this.touchKeys.fire || this.pointer.fire; },
     isQ() { return this.keys.q || this.keys.Q || this.touchKeys.q; },
     isE() { return this.keys.e || this.keys.E || this.touchKeys.e; },
     isF() { return this.keys.f || this.keys.F || this.touchKeys.f; },
@@ -1640,15 +1682,24 @@ class Player {
         let focus = GameEngine.focusMode();
         let spd = this.speed * (focus ? 0.5 : 1);
         let dx=0, dy=0;
-        if(Input.isLeft()) { dx -= spd; this.tilt = Math.max(this.tilt - 0.1, -0.3); } else if(Input.isRight()) { dx += spd; this.tilt = Math.min(this.tilt + 0.1, 0.3); } else { this.tilt *= 0.8; }
-        if(Input.isUp()) dy -= spd; if(Input.isDown()) dy += spd;
-        if(dx!==0 && dy!==0) { let l = Math.hypot(dx,dy); dx=dx/l*spd; dy=dy/l*spd; }
-        if (GameEngine.emStorm > 0) {
-            this.vx += (dx - this.vx) * 0.12; this.vy += (dy - this.vy) * 0.12;
-            this.x += this.vx; this.y += this.vy;
+        const pointerTarget = Input.getPointerTarget();
+        if (pointerTarget) {
+            const previousX = this.x, previousY = this.y;
+            this.x = Math.max(0, Math.min(WIDTH - this.width, pointerTarget.x - this.width / 2));
+            this.y = Math.max(0, Math.min(HEIGHT - this.height, pointerTarget.y - this.height / 2));
+            this.vx = this.x - previousX; this.vy = this.y - previousY;
+            if (this.vx < -0.5) this.tilt = -0.3; else if (this.vx > 0.5) this.tilt = 0.3; else this.tilt *= 0.8;
         } else {
-            this.vx = dx; this.vy = dy;
-            this.x += dx; this.y += dy;
+            if(Input.isLeft()) { dx -= spd; this.tilt = Math.max(this.tilt - 0.1, -0.3); } else if(Input.isRight()) { dx += spd; this.tilt = Math.min(this.tilt + 0.1, 0.3); } else { this.tilt *= 0.8; }
+            if(Input.isUp()) dy -= spd; if(Input.isDown()) dy += spd;
+            if(dx!==0 && dy!==0) { let l = Math.hypot(dx,dy); dx=dx/l*spd; dy=dy/l*spd; }
+            if (GameEngine.emStorm > 0) {
+                this.vx += (dx - this.vx) * 0.12; this.vy += (dy - this.vy) * 0.12;
+                this.x += this.vx; this.y += this.vy;
+            } else {
+                this.vx = dx; this.vy = dy;
+                this.x += dx; this.y += dy;
+            }
         }
         if(this.x<0) this.x=0; if(this.x+this.width>WIDTH) this.x=WIDTH-this.width; if(this.y<0) this.y=0; if(this.y+this.height>HEIGHT) this.y=HEIGHT-this.height;
         this.history.unshift({x: this.x, y: this.y}); if(this.history.length > 25) this.history.pop();
@@ -2090,6 +2141,7 @@ const GameEngine = {
         document.getElementById('game-wrapper').classList.toggle('touch-active', newState === STATE.PLAYING);
         document.getElementById('game-wrapper').classList.remove('touch-paused');
         Input.clearTouch();
+        Input.clearPointer();
         if(newState === STATE.PLAYING) {
             UI.hideAll();
             AudioSys.stopMusic();
@@ -2317,7 +2369,7 @@ const GameEngine = {
         if (this.state !== STATE.PLAYING) return;
         this.paused = !this.paused;
         document.getElementById('game-wrapper').classList.toggle('touch-paused', this.paused);
-        if (this.paused) Input.clearTouch();
+        if (this.paused) { Input.clearTouch(); Input.clearPointer(); }
         if (this.paused) {
             UI.showPause();
             AudioSys.pauseMusic();
@@ -2336,7 +2388,7 @@ const GameEngine = {
         let subEl = document.getElementById('tut-sub');
         if (t.step === 0) {
             titleEl.innerText = '机动测试 (STEP 1/2)';
-            subEl.innerText = '按 [W A S D] 或方向键移动战机';
+            subEl.innerText = '移动鼠标或拖动触屏，也可按 [W A S D] 移动战机';
             if (Input.isUp() || Input.isDown() || Input.isLeft() || Input.isRight()) { t.step = 1; t.frames = 0; AudioSys.playClick(); }
             if (t.frames > 900) { t.done = true; }
         } else if (t.step === 1) {
