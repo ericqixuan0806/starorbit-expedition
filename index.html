@@ -1,0 +1,3055 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>星轨战纪 V2.0：远征 (Star-Orbit: Expedition)</title>
+    <style>
+        /* ==========================================================================
+           1. 全局 CSS 变量与基础重置 (Global Variables & Reset)
+           ========================================================================== */
+        :root {
+            --primary: #00ffff;
+            --primary-glow: rgba(0, 255, 255, 0.6);
+            --secondary: #ff00ff;
+            --secondary-glow: rgba(255, 0, 255, 0.6);
+            --warning: #ff3333;
+            --success: #00ff66;
+            --gold: #ffd700;
+            --bg-dark: #020205;
+            --panel-bg: rgba(10, 15, 30, 0.85);
+            --panel-border: rgba(0, 255, 255, 0.3);
+            --glass-blur: blur(15px);
+            --font-main: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            --font-tech: 'Courier New', Courier, monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: #ffffff;
+            font-family: var(--font-main);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            background-image: 
+                radial-gradient(circle at center, rgba(0,255,255,0.03) 0%, transparent 60%),
+                linear-gradient(rgba(0, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 100% 100%, 50px 50px, 50px 50px;
+            animation: bgShift 30s linear infinite;
+        }
+
+        @keyframes bgShift {
+            0% { background-position: 0 0, 0 0, 0 0; }
+            100% { background-position: 0 0, 0 50px, 0 50px; }
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,255,255,0.4); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(0,255,255,0.8); }
+
+        /* ==========================================================================
+           2. 核心游戏容器 (Main Game Wrapper)
+           ========================================================================== */
+        #game-wrapper {
+            position: relative;
+            width: 800px;
+            height: 900px;
+            max-width: 100vw;
+            max-height: 100vh;
+            background: #000000;
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 1), 0 0 20px var(--primary-glow) inset;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #touch-controls { display: none; }
+
+        @media (pointer: coarse) {
+            #game-wrapper.touch-active:not(.touch-paused) #touch-controls {
+                position: absolute;
+                inset: 0;
+                display: block;
+                z-index: 12;
+                pointer-events: none;
+                touch-action: none;
+            }
+            .touch-pad, .touch-actions { position: absolute; bottom: max(12px, env(safe-area-inset-bottom)); display: grid; gap: 6px; pointer-events: auto; }
+            .touch-pad { left: max(12px, env(safe-area-inset-left)); grid-template: repeat(3, min(13vw, 54px)) / repeat(3, min(13vw, 54px)); }
+            .touch-actions { right: max(12px, env(safe-area-inset-right)); grid-template-columns: repeat(3, min(12vw, 50px)); align-items: end; }
+            .touch-btn {
+                min-width: 42px; min-height: 42px; border: 1px solid rgba(0,255,255,0.55); border-radius: 12px;
+                background: rgba(0,18,32,0.68); color: #dff; font: 700 14px var(--font-tech);
+                text-shadow: 0 0 8px var(--primary); box-shadow: 0 0 12px rgba(0,255,255,0.16) inset;
+                -webkit-tap-highlight-color: transparent; touch-action: none; pointer-events: auto;
+            }
+            .touch-btn:active, .touch-btn.is-pressed { background: rgba(0,180,200,0.55); }
+            .touch-pad [data-input="up"] { grid-area: 1 / 2; }
+            .touch-pad [data-input="left"] { grid-area: 2 / 1; }
+            .touch-pad [data-input="down"] { grid-area: 2 / 2; }
+            .touch-pad [data-input="right"] { grid-area: 2 / 3; }
+            .touch-pad [data-input="focus"] { grid-area: 3 / 2; font-size: 11px; }
+            .touch-actions [data-input="fire"] { grid-column: 1 / 4; min-height: 52px; border-color: rgba(255,100,100,0.75); color: #fff; }
+            .touch-actions [data-input="pause"] { grid-column: 3; }
+            #game-wrapper.touch-active:not(.touch-paused) #touch-controls .touch-pause { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); min-width: 42px; min-height: 42px; }
+        }
+
+        @media (pointer: coarse) and (max-width: 420px) {
+            .touch-btn { min-width: 38px; min-height: 38px; font-size: 12px; border-radius: 10px; }
+            .touch-pad { gap: 4px; }
+            .touch-actions { gap: 4px; }
+        }
+
+        /* ==========================================================================
+           3. 游戏内抬头显示器 (HUD - Heads Up Display)
+           ========================================================================== */
+        #hud {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .hud-panel {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px 18px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .status-title {
+            font-family: var(--font-tech);
+            font-size: 13px;
+            color: var(--primary);
+            margin-bottom: 6px;
+            text-shadow: 0 0 5px var(--primary);
+            letter-spacing: 1px;
+        }
+
+        .bar-container {
+            width: 260px;
+            height: 16px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 10px rgba(0,0,0,0.8) inset;
+        }
+
+        #hp-bar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #00aa00, #00ff00);
+            box-shadow: 0 0 10px #00ff00;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s;
+        }
+
+        .hud-info { text-align: right; }
+        .hud-score { color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+        .coin-display { color: var(--gold); text-shadow: 0 0 10px rgba(255, 215, 0, 0.6); font-size: 24px; font-weight: bold; font-family: var(--font-tech); margin-bottom: 5px; }
+        .level-display { color: var(--secondary); text-shadow: 0 0 8px var(--secondary-glow); font-size: 18px; font-weight: bold; }
+
+        /* BOSS 血条 UI */
+        #boss-ui {
+            position: absolute;
+            top: 90px; left: 50%; transform: translateX(-50%);
+            width: 600px;
+            text-align: center;
+            display: none;
+            opacity: 0;
+            transition: opacity 1s;
+            background: rgba(20, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 0, 0, 0.4);
+            backdrop-filter: blur(6px);
+        }
+
+        #boss-name {
+            font-size: 22px; color: #ff4444; text-shadow: 0 0 15px #ff0000;
+            margin-bottom: 10px; font-weight: 900; letter-spacing: 5px; text-transform: uppercase;
+        }
+
+        .boss-bar-bg {
+            width: 100%; height: 22px; background: #220000;
+            border: 2px solid #550000; border-radius: 11px; overflow: hidden;
+        }
+
+        #boss-hp-bar {
+            width: 100%; height: 100%; background: linear-gradient(90deg, #880000, #ff0000, #ff8888);
+            box-shadow: 0 0 15px #ff0000; transition: width 0.1s linear;
+        }
+
+        .sys-msg {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 50px; font-weight: 900; color: #fff; text-shadow: 0 0 20px #fff, 0 0 40px var(--primary);
+            pointer-events: none; opacity: 0; transition: opacity 0.5s; z-index: 100; letter-spacing: 8px; text-align: center;
+        }
+
+        /* ==========================================================================
+           4. 覆盖层与通用组件 (Overlays & UI Components)
+           ========================================================================== */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 12, 0.85);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 20; backdrop-filter: var(--glass-blur); transition: opacity 0.3s;
+        }
+
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+
+        h1 { font-size: 54px; color: var(--primary); text-shadow: 0 0 30px var(--primary); margin-bottom: 15px; letter-spacing: 6px; font-weight: 900; text-align: center; }
+        h2 { font-size: 30px; color: #fff; text-shadow: 0 0 15px rgba(255,255,255,0.5); margin-bottom: 20px; font-weight: 300; }
+        
+        .btn {
+            position: relative; background: rgba(0, 50, 100, 0.5);
+            border: 1px solid var(--primary); color: #fff;
+            padding: 15px 35px; font-size: 18px; border-radius: 6px;
+            cursor: pointer; margin: 10px; transition: all 0.3s ease;
+            text-transform: uppercase; font-weight: bold; pointer-events: auto; letter-spacing: 2px; overflow: hidden;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.15);
+        }
+        .btn:hover { background: rgba(0, 150, 255, 0.4); box-shadow: 0 0 25px var(--primary-glow); transform: translateY(-2px); border-color: #fff; }
+        .btn:active { transform: translateY(1px); }
+        .btn:disabled { background: rgba(50, 50, 50, 0.6); border-color: #444; color: #777; cursor: not-allowed; box-shadow: none; transform: none; }
+        .btn-purple { border-color: var(--secondary); box-shadow: 0 0 15px rgba(255, 0, 255, 0.15); }
+        .btn-purple:hover { background: rgba(150, 0, 255, 0.4); box-shadow: 0 0 25px var(--secondary-glow); }
+        .btn-gold { border-color: var(--gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15); color: var(--gold); }
+        .btn-gold:hover { background: rgba(200, 150, 0, 0.4); box-shadow: 0 0 25px rgba(255, 215, 0, 0.6); color: #fff; border-color: #fff;}
+
+        /* ==========================================================================
+           5. 战术星图 (关卡选择系统 - Level Select UI)
+           ========================================================================== */
+        #level-select-container {
+            width: 95%; height: 90%; background: var(--panel-bg);
+            border: 1px solid var(--panel-border); border-radius: 12px;
+            display: flex; flex-direction: row; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            pointer-events: auto;
+        }
+
+        .ls-left-panel {
+            width: 35%; border-right: 1px solid rgba(255,255,255,0.1); padding-right: 20px;
+            display: flex; flex-direction: column; overflow-y: auto;
+        }
+        .world-group { margin-bottom: 20px; }
+        .world-title { font-size: 20px; color: var(--primary); margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 5px; }
+        .world-locked { filter: grayscale(100%); opacity: 0.5; }
+        
+        .stage-btn {
+            width: 100%; background: rgba(20,25,40,0.6); border: 1px solid #334;
+            color: #ccc; padding: 12px 15px; margin-bottom: 8px; border-radius: 6px;
+            text-align: left; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center;
+        }
+        .stage-btn:hover:not(:disabled) { background: rgba(0,100,150,0.4); border-color: var(--primary); color: #fff; }
+        .stage-btn.active { background: rgba(0,150,200,0.5); border-color: var(--primary); color: #fff; box-shadow: 0 0 10px var(--primary-glow); }
+        .stage-btn:disabled { cursor: not-allowed; background: rgba(10,10,15,0.6); color: #555; }
+        .stage-rank { font-weight: bold; font-family: var(--font-tech); font-size: 16px; }
+
+        .ls-right-panel {
+            width: 65%; padding-left: 20px; display: flex; flex-direction: column;
+        }
+        .stage-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
+        .stage-title { font-size: 28px; color: #fff; font-weight: bold; text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        .stage-diff { color: var(--warning); font-size: 18px; margin-top: 5px; }
+        .stage-stats { background: rgba(0,0,0,0.4); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px; display: flex; justify-content: space-between;}
+        
+        .bestiary-section { flex: 1; overflow-y: auto; }
+        .bestiary-title { font-size: 18px; color: var(--secondary); margin-bottom: 10px; border-bottom: 1px dashed rgba(255,0,255,0.3); padding-bottom: 5px; }
+        .enemy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        
+        .enemy-card {
+            background: linear-gradient(145deg, rgba(30,35,55,0.4), rgba(15,20,30,0.6));
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px;
+            display: flex; align-items: center; gap: 15px;
+        }
+        .enemy-canvas-wrapper {
+            width: 80px; height: 80px; background: rgba(0,0,0,0.5); border-radius: 6px;
+            border: 1px solid #444; display: flex; justify-content: center; align-items: center;
+        }
+        .enemy-info { flex: 1; }
+        .e-name { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 5px; }
+        .e-stats { font-size: 12px; color: #aaa; margin-bottom: 5px; font-family: var(--font-tech); }
+        .e-desc { font-size: 12px; color: #888; line-height: 1.4; }
+        
+        .locked-card { filter: brightness(0.4) sepia(1) hue-rotate(180deg); }
+        .locked-card .e-name { color: #f00; }
+        
+        /* ==========================================================================
+           6. 结算评级界面 (Stage Clear / Rating UI)
+           ========================================================================== */
+        #stage-clear-panel {
+            background: var(--panel-bg); border: 2px solid var(--success); border-radius: 12px;
+            width: 600px; padding: 40px; text-align: center; box-shadow: 0 0 50px rgba(0,255,100,0.2);
+            pointer-events: auto;
+        }
+        .rank-display {
+            font-size: 120px; font-weight: 900; font-family: var(--font-tech); margin: 20px 0;
+            text-shadow: 0 0 30px currentColor; animation: pulseRank 2s infinite;
+        }
+        @keyframes pulseRank { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        
+        .rank-S { color: var(--gold); }
+        .rank-A { color: var(--secondary); }
+        .rank-B { color: var(--primary); }
+        .rank-C { color: #00ff00; }
+        .rank-D { color: #aaaaaa; }
+
+        .score-breakdown {
+            text-align: left; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 8px;
+            margin-bottom: 25px; font-size: 16px; line-height: 1.8; color: #ccc;
+        }
+        .score-row { display: flex; justify-content: space-between; }
+        .score-total { border-top: 1px solid #555; margin-top: 10px; padding-top: 10px; font-size: 20px; font-weight: bold; color: #fff; }
+        .bonus-coins { font-size: 24px; color: var(--gold); font-weight: bold; margin-bottom: 30px; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
+
+        /* ==========================================================================
+           7. 轨道军械库 (Shop/Armory UI)
+           ========================================================================== */
+        #shop-container {
+            background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px;
+            width: 90%; height: 85%; padding: 30px; display: flex; flex-direction: column; pointer-events: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        }
+        .shop-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px; margin-bottom: 25px; }
+        .shop-tabs { display: flex; gap: 15px; }
+        .tab-btn { background: transparent; color: #888; border: none; border-bottom: 3px solid transparent; padding: 10px 20px; cursor: pointer; font-size: 20px; font-weight: bold; transition: all 0.3s; }
+        .tab-btn:hover { color: #fff; }
+        .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); text-shadow: 0 0 10px var(--primary-glow); }
+        .shop-content { flex: 1; overflow-y: auto; padding-right: 15px; }
+        .shop-panel { display: none; grid-template-columns: repeat(2, 1fr); gap: 20px; animation: fadeIn 0.4s ease; }
+        .shop-panel.active { display: grid; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .upgrade-card {
+            background: linear-gradient(145deg, rgba(30,35,55,0.6), rgba(15,20,30,0.8));
+            border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 20px;
+            display: flex; flex-direction: column; justify-content: space-between; transition: 0.2s; position: relative; overflow: hidden;
+        }
+        .upgrade-card:hover { border-color: rgba(0, 255, 255, 0.4); box-shadow: 0 10px 20px rgba(0,0,0,0.5), 0 0 15px rgba(0,255,255,0.1) inset; transform: translateY(-3px); }
+        .up-title { font-size: 22px; color: #fff; margin-bottom: 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .up-desc { font-size: 14px; color: #aaa; margin-bottom: 15px; flex: 1; line-height: 1.4; }
+        .up-stats { font-size: 15px; color: var(--success); margin-bottom: 20px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; font-family: var(--font-tech); }
+        .up-action { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; }
+        .up-price { font-size: 22px; color: var(--gold); font-weight: bold; font-family: var(--font-tech); }
+        
+        .buy-btn { background: rgba(0, 200, 0, 0.2); border: 1px solid #00ff00; color: #fff; padding: 10px 20px; cursor: pointer; border-radius: 4px; font-weight: bold; transition: all 0.2s; }
+        .buy-btn:hover:not(:disabled) { background: rgba(0, 255, 0, 0.4); box-shadow: 0 0 15px rgba(0, 255, 0, 0.4); }
+        .buy-btn:disabled { background: rgba(50, 50, 50, 0.5); border-color: #444; color: #666; cursor: not-allowed; }
+
+        /* ==========================================================================
+           8. 主动技能 / 连击 / Buff / 演出 (Abilities, Combo, Power-ups, Cinematic)
+           ========================================================================== */
+        #combo-display {
+            position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+            text-align: center; z-index: 11; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+        }
+        #combo-count { font-size: 34px; font-weight: 900; color: var(--gold); font-family: var(--font-tech); text-shadow: 0 0 15px rgba(255,215,0,0.8), 0 0 30px rgba(255,215,0,0.4); }
+        #combo-mult { font-size: 14px; color: var(--primary); letter-spacing: 2px; }
+
+        #ability-bar {
+            position: absolute; bottom: 22px; left: 22px; display: flex; gap: 10px; z-index: 11; pointer-events: none;
+        }
+        .ability-slot {
+            width: 42px; height: 110px; background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 6px; position: relative; overflow: hidden;
+        }
+        .ability-fill { position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; transition: height 0.1s; }
+        .ability-label { position: absolute; bottom: 2px; width: 100%; text-align: center; font-size: 12px; color: #fff; font-weight: bold; font-family: var(--font-tech); z-index: 2; text-shadow: 0 0 6px #000; }
+        .ability-name { position: absolute; top: 3px; width: 100%; text-align: center; font-size: 9px; color: #ccc; z-index: 2; text-shadow: 0 0 4px #000; }
+        .ability-slot.ready .ability-fill { animation: abPulse 0.7s infinite; }
+        @keyframes abPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(2); } }
+        .ability-slot .ability-key { position: absolute; top: 16px; width: 100%; text-align: center; font-size: 17px; color: rgba(255,255,255,0.25); font-weight: 900; font-family: var(--font-tech); z-index: 1; }
+
+        #buff-bar {
+            position: absolute; top: 88px; left: 20px; display: flex; gap: 8px; z-index: 11; pointer-events: none; flex-wrap: wrap; max-width: 320px;
+        }
+        .buff-chip {
+            background: rgba(0,0,0,0.75); border: 1px solid currentColor; border-radius: 6px; padding: 4px 10px;
+            font-size: 12px; color: #fff; font-family: var(--font-tech); text-align: center; box-shadow: 0 0 8px rgba(0,0,0,0.6);
+        }
+        .buff-chip .b-name { font-weight: bold; }
+        .buff-chip .b-time { opacity: 0.75; font-size: 10px; }
+
+        #tutorial-hint {
+            position: absolute; top: 54%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(5, 10, 25, 0.88); border: 1px solid var(--primary); border-radius: 10px;
+            padding: 20px 38px; text-align: center; z-index: 60; pointer-events: none;
+            box-shadow: 0 0 35px rgba(0,255,255,0.25); opacity: 0; transition: opacity 0.3s;
+        }
+        #tutorial-hint .t-title { color: var(--primary); font-size: 22px; font-weight: bold; letter-spacing: 3px; margin-bottom: 8px; text-shadow: 0 0 10px var(--primary); }
+        #tutorial-hint .t-sub { color: #bbb; font-size: 14px; }
+
+        #cinematic-top, #cinematic-bottom { position: absolute; left: 0; width: 100%; height: 0; background: #000; z-index: 70; transition: height 0.4s; pointer-events: none; }
+        #cinematic-top { top: 0; }
+        #cinematic-bottom { bottom: 0; }
+        #cinematic-quote {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #ff3333; font-size: 28px; font-weight: 900; letter-spacing: 5px; text-align: center; white-space: nowrap;
+            text-shadow: 0 0 20px #f00, 0 0 45px #900; opacity: 0; transition: opacity 0.3s; z-index: 71; pointer-events: none;
+        }
+        #red-alert {
+            position: absolute; inset: 0; z-index: 69; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+            background: radial-gradient(ellipse at center, transparent 45%, rgba(255,0,0,0.38) 100%);
+        }
+        #red-alert.on { animation: redPulse 0.55s infinite; }
+        @keyframes redPulse { 0%,100% { opacity: 0.45; } 50% { opacity: 1; } }
+        #white-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 68; }
+        #speed-tint { position: absolute; inset: 0; background: rgba(0,100,255,0.12); opacity: 0; pointer-events: none; z-index: 67; transition: opacity 0.3s; }
+
+        #ach-toast {
+            position: absolute; top: 125px; left: 50%; transform: translateX(-50%);
+            background: linear-gradient(90deg, rgba(255,200,0,0.12), rgba(0,0,0,0.88), rgba(255,200,0,0.12));
+            border: 1px solid var(--gold); border-radius: 8px; padding: 12px 30px; z-index: 80;
+            text-align: center; opacity: 0; transition: opacity 0.3s; pointer-events: none; box-shadow: 0 0 30px rgba(255,215,0,0.4);
+        }
+        #ach-toast .t1 { color: var(--gold); font-weight: bold; letter-spacing: 3px; font-size: 16px; }
+        #ach-toast .t2 { color: #fff; font-size: 13px; margin-top: 4px; }
+
+        /* ==========================================================================
+           9. 暂停菜单 / 成就 / 无尽 (Pause, Achievements, Endless)
+           ========================================================================== */
+        #pause-panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; width: 580px; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.85); pointer-events: auto; }
+        .pause-grid { display: flex; gap: 25px; margin: 22px 0; text-align: left; }
+        .pause-col { flex: 1; background: rgba(0,0,0,0.45); border-radius: 8px; padding: 15px; border: 1px solid rgba(255,255,255,0.07); }
+        .pause-col h4 { color: var(--primary); margin-bottom: 10px; letter-spacing: 2px; font-size: 15px; }
+        .pause-col p { color: #bbb; font-size: 13px; line-height: 2; }
+        .stat-row { display: flex; justify-content: space-between; color: #ddd; font-size: 14px; padding: 4px 0; }
+        .stat-row b { color: var(--gold); }
+
+        #ach-screen-panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; width: 660px; max-height: 86%; padding: 25px 30px; overflow-y: auto; pointer-events: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.85); }
+        .ach-item { display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; }
+        .ach-icon { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; background: #222; border: 1px solid #444; flex-shrink: 0; }
+        .ach-item.done .ach-icon { background: rgba(255,215,0,0.15); border-color: var(--gold); }
+        .ach-info { flex: 1; }
+        .ach-name { font-size: 16px; font-weight: bold; color: #fff; }
+        .ach-desc { font-size: 12px; color: #999; margin-top: 3px; }
+        .ach-reward { font-size: 12px; color: var(--gold); margin-top: 3px; }
+        .ach-item:not(.done) .ach-name { color: #888; }
+        .ach-item.done { border-color: rgba(255,215,0,0.35); }
+
+        .weapon-tag { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+        .weapon-tag.equipped { background: rgba(0,255,255,0.2); color: var(--primary); border: 1px solid var(--primary); }
+        .weapon-tag.owned { background: rgba(0,255,100,0.15); color: var(--success); border: 1px solid rgba(0,255,100,0.5); }
+        .weapon-tag.locked { background: rgba(255,0,0,0.15); color: var(--warning); border: 1px solid rgba(255,0,0,0.5); }
+
+        #go-waves { color: var(--primary); }
+        #btn-endless:disabled { background: rgba(50,50,50,0.6); border-color: #444; color: #777; cursor: not-allowed; }
+        #btn-endless { border-color: var(--warning); color: var(--warning); box-shadow: 0 0 15px rgba(255,0,0,0.15); }
+        #btn-endless:hover:not(:disabled) { background: rgba(200,0,0,0.35); box-shadow: 0 0 25px rgba(255,0,0,0.5); color: #fff; border-color: #fff; }
+
+        /* ==========================================================================
+            10. 新系统: 擦弹/过载 / 专注 / 环境 / 进化 / 图鉴精通
+            ========================================================================== */
+        #ab-shift.oc-ready .ability-fill { animation: abPulse 0.5s infinite; }
+        #ab-shift.oc-ready .ability-label { color: var(--gold); text-shadow: 0 0 8px var(--gold); }
+
+        #glitch-overlay {
+            position: absolute; inset: 0; z-index: 66; pointer-events: none; opacity: 0;
+            background: linear-gradient(90deg, transparent, rgba(0,255,120,0.07), transparent), linear-gradient(0deg, rgba(255,0,120,0.05), transparent);
+            mix-blend-mode: screen;
+        }
+        #glitch-overlay.on { opacity: 1; animation: glitchJitter 0.09s steps(2) infinite; }
+        @keyframes glitchJitter {
+            0%   { transform: translate(0, 0); filter: hue-rotate(0deg); }
+            25%  { transform: translate(3px, -1px); filter: hue-rotate(60deg); }
+            50%  { transform: translate(-3px, 2px); filter: hue-rotate(-40deg); }
+            75%  { transform: translate(2px, 1px); filter: hue-rotate(120deg); }
+            100% { transform: translate(-2px, -2px); filter: hue-rotate(0deg); }
+        }
+
+        #evolution-screen .evo-panel {
+            background: var(--panel-bg); border: 2px solid var(--gold); border-radius: 12px;
+            width: 720px; padding: 40px; text-align: center; pointer-events: auto;
+            box-shadow: 0 0 60px rgba(255,215,0,0.2);
+        }
+        .evo-cards { display: flex; gap: 24px; margin-top: 30px; }
+        .evo-card {
+            flex: 1; background: linear-gradient(145deg, rgba(40,35,10,0.6), rgba(15,15,25,0.8));
+            border: 1px solid var(--gold); border-radius: 12px; padding: 24px; cursor: pointer;
+            transition: all 0.25s; position: relative; overflow: hidden;
+        }
+        .evo-card:hover { transform: translateY(-4px); box-shadow: 0 0 30px rgba(255,215,0,0.35); background: rgba(70,55,15,0.6); }
+        .evo-icon { font-size: 52px; margin-bottom: 12px; }
+        .evo-name { font-size: 22px; color: var(--gold); font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
+        .evo-id { font-size: 11px; color: #888; letter-spacing: 1px; margin-bottom: 12px; }
+        .evo-fx { font-size: 13px; color: var(--primary); line-height: 1.7; margin: 12px 0; padding: 10px; background: rgba(0,255,255,0.06); border-left: 3px solid var(--primary); border-radius: 0 6px 6px 0; }
+        .evo-desc { font-size: 14px; color: #bbb; line-height: 1.6; }
+        .evo-locked-note { color: #888; font-size: 13px; margin-top: 22px; }
+
+        .chip-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+        .chip-tag.attack { background: rgba(255,0,0,0.15); color: #ff6666; border: 1px solid rgba(255,0,0,0.5); }
+        .chip-tag.defense { background: rgba(0,150,255,0.15); color: #66bbff; border: 1px solid rgba(0,150,255,0.5); }
+        .chip-tag.utility { background: rgba(255,215,0,0.15); color: var(--gold); border: 1px solid rgba(255,215,0,0.5); }
+
+        .holo-card { animation: holoShift 2.4s linear infinite; }
+        @keyframes holoShift { 0%,100% { filter: hue-rotate(0deg) brightness(1.05); } 50% { filter: hue-rotate(90deg) brightness(1.35); } }
+        .mastery-line { font-size: 12px; color: var(--gold); margin-top: 4px; font-family: var(--font-tech); }
+        .mastery-line b { color: #fff; }
+
+        .graze-fx { position: absolute; pointer-events: none; z-index: 5; }
+
+        /* ==========================================================================
+            11. UI 精细美化: 菜单统计 / 图标 / 动画
+            ========================================================================== */
+        .menu-stats {
+            display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+            margin-bottom: 28px;
+        }
+        .ms-item {
+            display: flex; align-items: center; gap: 6px; font-size: 13px;
+            padding: 7px 14px; border-radius: 20px;
+            background: rgba(0,255,255,0.06); border: 1px solid rgba(0,255,255,0.25);
+            color: #bbb; letter-spacing: 1px; backdrop-filter: var(--glass-blur);
+        }
+        .ms-item b { color: #fff; font-size: 15px; font-family: var(--font-tech); }
+        .ms-item .ms-icon { font-size: 16px; }
+
+        .menu-title {
+            font-size: 44px; font-weight: bold; letter-spacing: 6px; margin-bottom: 6px;
+            background: linear-gradient(90deg, #fff, var(--primary), var(--secondary), #fff);
+            background-size: 300% 100%; -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; animation: titleFlow 6s linear infinite;
+        }
+        @keyframes titleFlow { 0% { background-position: 0% 0; } 100% { background-position: 300% 0; } }
+
+        .btn .btn-icon { margin-right: 6px; }
+        .btn { transition: transform 0.15s, box-shadow 0.2s, background 0.2s; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); }
+
+        .card-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 44px; height: 44px; font-size: 22px; border-radius: 10px;
+            background: rgba(0,255,255,0.08); border: 1px solid rgba(0,255,255,0.3);
+            margin-right: 12px; box-shadow: 0 0 12px rgba(0,255,255,0.15);
+            vertical-align: middle;
+        }
+        .up-title-ic { display: flex; align-items: center; }
+
+        #combo-display.pop { animation: comboPop 0.35s cubic-bezier(0.2, 2.5, 0.4, 1); }
+        @keyframes comboPop {
+            0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); }
+        }
+        #combo-count { text-shadow: 0 0 12px var(--gold); }
+
+        .rank-display { animation: rankShine 1.6s ease-in-out infinite; }
+        @keyframes rankShine {
+            0%, 100% { text-shadow: 0 0 15px currentColor; filter: brightness(1); }
+            50% { text-shadow: 0 0 35px currentColor, 0 0 60px currentColor; filter: brightness(1.4); }
+        }
+
+        .stage-stars { font-size: 11px; letter-spacing: 1px; color: var(--gold); }
+        .mastery-bar {
+            height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08);
+            overflow: hidden; margin-top: 6px; width: 100%;
+        }
+        .mastery-bar-fill {
+            height: 100%; border-radius: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--gold));
+            box-shadow: 0 0 8px rgba(0,255,255,0.6); transition: width 0.6s;
+        }
+
+        #ability-bar .ability-slot { position: relative; }
+        .ability-ico {
+            font-size: 13px; text-align: center; margin: 2px 0 1px;
+            filter: drop-shadow(0 0 4px currentColor);
+        }
+
+        .menu-sub { color: #666; font-size: 11px; letter-spacing: 3px; margin-top: 14px; font-family: var(--font-tech); }
+
+        .hud-coins-ico { font-size: 12px; }
+        #score-count, #coin-count { font-family: var(--font-tech); }
+
+        .go-stats {
+            display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+            margin: 0 auto 24px; max-width: 460px;
+        }
+        .go-stat {
+            padding: 8px 14px; border-radius: 8px; font-size: 12px; color: #bbb;
+            background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12);
+        }
+        .go-stat b { color: var(--primary); font-family: var(--font-tech); font-size: 14px; }
+
+        .evo-card .evo-ico { font-size: 44px; display: block; margin-bottom: 10px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5)); }
+
+        .ach-ico { font-size: 26px; width: 52px; text-align: center; }
+
+        .world-ico { font-size: 15px; margin-right: 6px; }
+        .world-title { display: flex; align-items: center; }
+
+        .shop-tabs .tab-btn { transition: all 0.2s; }
+        .tab-btn.active { box-shadow: 0 0 14px rgba(0,255,255,0.35); }
+
+        #gameCanvas { border-radius: 12px; box-shadow: 0 0 40px rgba(0,255,255,0.08), inset 0 0 80px rgba(0,0,0,0.4); }
+        .scanlines {
+            position: absolute; inset: 0; pointer-events: none; z-index: 3;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 2px, transparent 4px);
+            mix-blend-mode: multiply; opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <canvas id="gameCanvas" width="800" height="900"></canvas>
+    <div class="scanlines"></div>
+
+    <div id="touch-controls" aria-label="触屏操作">
+        <div class="touch-pad" aria-label="方向与专注">
+            <button class="touch-btn" type="button" data-input="up" aria-label="上移">▲</button>
+            <button class="touch-btn" type="button" data-input="left" aria-label="左移">◀</button>
+            <button class="touch-btn" type="button" data-input="down" aria-label="下移">▼</button>
+            <button class="touch-btn" type="button" data-input="right" aria-label="右移">▶</button>
+            <button class="touch-btn" type="button" data-input="focus" aria-label="专注模式">专注</button>
+        </div>
+        <div class="touch-actions" aria-label="攻击与技能">
+            <button class="touch-btn" type="button" data-input="q" aria-label="Q 清场技能">Q</button>
+            <button class="touch-btn" type="button" data-input="e" aria-label="E 护盾技能">E</button>
+            <button class="touch-btn" type="button" data-input="f" aria-label="F 冲击波">F</button>
+            <button class="touch-btn" type="button" data-input="fire" aria-label="持续开火">开火</button>
+        </div>
+        <button class="touch-btn touch-pause" type="button" data-input="pause" aria-label="暂停">Ⅱ</button>
+    </div>
+
+    <div id="hud">
+        <div class="hud-top">
+            <div class="hud-panel">
+                <div class="status-title">HULL INTEGRITY / 机体护盾</div>
+                <div class="bar-container"><div id="hp-bar"></div></div>
+            </div>
+            
+            <div class="hud-panel hud-info">
+                <div class="hud-score">SCORE: <span id="score-count">0</span></div>
+                <div class="coin-display">💰 <span id="coin-count">0</span></div>
+                <div class="level-display" id="level-display-text">WORLD 1-1</div>
+            </div>
+        </div>
+        
+        <div id="boss-ui">
+            <div id="boss-name">UNKNOWN ENTITY</div>
+            <div class="boss-bar-bg"><div id="boss-hp-bar"></div></div>
+        </div>
+        
+        <div id="combo-display">
+            <div id="combo-count">0</div>
+            <div id="combo-mult">x1.0</div>
+        </div>
+        
+        <div id="ability-bar">
+            <div class="ability-slot" id="ab-q">
+                <div class="ability-key">Q</div>
+                <div class="ability-ico" style="color:#ff5555;">💥</div>
+                <div class="ability-name">清场</div>
+                <div class="ability-fill" style="background:linear-gradient(0deg,#660000,#ff3333);"></div>
+                <div class="ability-label">100%</div>
+            </div>
+            <div class="ability-slot" id="ab-e">
+                <div class="ability-key">E</div>
+                <div class="ability-ico" style="color:#00ffff;">🛡</div>
+                <div class="ability-name">无敌</div>
+                <div class="ability-fill" style="background:linear-gradient(0deg,#003366,#00ffff);"></div>
+                <div class="ability-label">100%</div>
+            </div>
+            <div class="ability-slot" id="ab-shift">
+                <div class="ability-key">F</div>
+                <div class="ability-ico" style="color:#ffd700;">⚡</div>
+                <div class="ability-name">过载</div>
+                <div class="ability-fill" style="background:linear-gradient(0deg,#005566,#00ffff);"></div>
+                <div class="ability-label">0%</div>
+            </div>
+        </div>
+        
+        <div id="buff-bar"></div>
+    </div>
+
+    <div id="sys-msg" class="sys-msg">INITIATING...</div>
+
+    <div id="cinematic-top"></div>
+    <div id="cinematic-bottom"></div>
+    <div id="red-alert"></div>
+    <div id="speed-tint"></div>
+    <div id="white-flash"></div>
+    <div id="glitch-overlay"></div>
+    <div id="cinematic-quote">WARNING: HOSTILE SIGNATURE DETECTED</div>
+
+    <div id="tutorial-hint">
+        <div class="t-title" id="tut-title">机动测试</div>
+        <div class="t-sub" id="tut-sub">按 [W A S D] 或方向键移动战机</div>
+    </div>
+
+    <div id="ach-toast">
+        <div class="t1" id="ach-toast-title">成就解锁!</div>
+        <div class="t2" id="ach-toast-desc">-</div>
+    </div>
+
+    <!-- 主菜单 -->
+    <div id="main-menu" class="overlay">
+        <h1 class="menu-title">星轨战纪 V2.0：远征</h1>
+        <h2 style="color: var(--primary); letter-spacing: 4px;">STAR-ORBIT: EXPEDITION</h2>
+        <div class="menu-stats">
+            <div class="ms-item"><span class="ms-icon">💰</span> <b id="ms-coins">0</b> 信用点</div>
+            <div class="ms-item"><span class="ms-icon">⭐</span> S 级 <b id="ms-sranks">0</b>/25</div>
+            <div class="ms-item"><span class="ms-icon">🧬</span> 进化 <b id="ms-evos">0</b>/4</div>
+            <div class="ms-item"><span class="ms-icon">🌌</span> 无尽 <b id="ms-endless">0</b> 波</div>
+        </div>
+        <div style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 40px; text-align: center; line-height: 1.8;">
+            <p style="color:#ddd; font-size:16px;">
+                宇宙被五大星区的霸主割裂，<br>你必须逐个击破，夺回星空控制权。<br><br>
+                <strong style="color: var(--primary);">导航:</strong> [W A S D] / 方向键 | <strong style="color: var(--warning);">开火:</strong> [空格] / [K] |
+                <strong style="color: var(--gold);">过载:</strong> [F] | <strong style="color: var(--secondary);">聚焦:</strong> [SHIFT]
+            </p>
+        </div>
+        <button class="btn btn-gold" id="btn-quick-start"><span class="btn-icon">🚀</span>继续远征 (CONTINUE)</button>
+        <button class="btn" id="btn-level-select"><span class="btn-icon">🗺️</span>战术星图 (STAGES)</button>
+        <button class="btn btn-purple" id="btn-shop-menu"><span class="btn-icon">🔧</span>轨道军械库 (ARMORY)</button>
+        <button class="btn" id="btn-endless" disabled><span class="btn-icon">🌌</span>无尽深渊 (ENDLESS) 🔒</button>
+        <button class="btn" id="btn-achievements"><span class="btn-icon">🏆</span>成就档案 (ACHIEVEMENTS)</button>
+        <div class="menu-sub">SYSTEM ONLINE · SECTOR 7G // STAR-ORBIT EXPEDITION PROTOCOL</div>
+    </div>
+
+    <!-- 战术芯片与分支进化 -->
+    <div id="evolution-screen" class="overlay hidden">
+        <div class="evo-panel">
+            <h2 style="color: var(--gold); text-shadow: 0 0 20px rgba(255,215,0,0.6); font-weight:bold; margin:0;">分支进化 (BRANCH EVOLUTION)</h2>
+            <p style="color:#aaa; margin-top:12px; font-size:14px;">星区霸主已被击溃。选择一项专属战术改造,构筑你的战斗流派——选择后不可更改。</p>
+            <div class="evo-cards" id="evo-options"></div>
+            <div class="evo-locked-note" id="evo-note">正在同步战术数据库...</div>
+        </div>
+    </div>
+
+    <!-- 战术星图 -->
+    <div id="level-select-screen" class="overlay hidden">
+        <div id="level-select-container">
+            <div class="ls-left-panel" id="ls-world-list"></div>
+            <div class="ls-right-panel">
+                <div class="stage-header">
+                    <div>
+                        <div class="stage-title" id="ls-stage-title">选择一个关卡</div>
+                        <div class="stage-diff" id="ls-stage-diff">危险等级: -</div>
+                    </div>
+                    <button class="btn btn-gold" id="btn-deploy" disabled>立即部署 (DEPLOY)</button>
+                </div>
+                
+                <div class="stage-stats">
+                    <div>历史最高得分: <span id="ls-high-score" style="color:var(--primary); font-weight:bold;">0</span></div>
+                    <div>战斗评级: <span id="ls-best-rank" style="font-size:20px; font-weight:bold;">-</span></div>
+                    <div id="ls-mastery" style="font-size:12px; color:#888; margin-top:4px;">精通系统: -</div>
+                </div>
+                
+                <div class="bestiary-section">
+                    <div class="bestiary-title">该空域敌军情报 (ENEMIES)</div>
+                    <div class="enemy-grid" id="ls-enemy-grid"></div>
+                </div>
+                
+                <div style="margin-top: 20px; text-align: right;">
+                    <button class="btn" id="btn-close-ls">返回主菜单</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 结算评级界面 -->
+    <div id="stage-clear-screen" class="overlay hidden">
+        <div id="stage-clear-panel">
+            <h2 style="color: var(--success); text-shadow: 0 0 15px var(--success); font-weight:bold; font-size: 36px;">空域已净空 (STAGE CLEARED)</h2>
+            <div class="rank-display" id="sc-rank">S</div>
+            <div class="score-breakdown">
+                <div class="score-row"><span>击杀基础分:</span> <span id="sc-base-score">0</span></div>
+                <div class="score-row"><span>时间加成 (速通):</span> <span id="sc-time-bonus">0</span></div>
+                <div class="score-row"><span>耐久加成 (无伤):</span> <span id="sc-hp-bonus">0</span></div>
+                <div class="score-row score-total"><span>总评定积分:</span> <span id="sc-total-score" style="color:var(--primary);">0</span></div>
+            </div>
+            <div class="bonus-coins">评级奖金: +$ <span id="sc-bonus-coins">0</span></div>
+            <button class="btn btn-gold" id="btn-sc-next">继续推进 / 返回</button>
+        </div>
+    </div>
+
+    <!-- 游戏结束界面 -->
+    <div id="game-over" class="overlay hidden">
+        <h1 style="color: var(--warning); text-shadow: 0 0 30px var(--warning);">机体结构崩溃</h1>
+        <h2 style="font-size: 24px; margin-bottom: 10px; color:#aaa;">信号已丢失...</h2>
+        <div class="go-stats">
+            <div class="go-stat">本局击杀 <b id="go-kills">0</b></div>
+            <div class="go-stat">最大连击 <b id="go-combo">0</b></div>
+            <div class="go-stat">擦弹 <b id="go-graze">0</b></div>
+            <div class="go-stat">结算得分 <b id="go-score">0</b></div>
+        </div>
+        <h3 style="font-size: 28px; margin-bottom: 40px; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 5px;">
+            本次行动回收晶体: <span id="go-coins" style="color:var(--gold);">0</span>
+        </h3>
+        <h3 id="go-wave-line" style="display:none; font-size: 22px; margin-bottom: 25px; color: var(--primary); text-shadow: 0 0 10px var(--primary);">
+            无尽深渊生存波次: <span id="go-waves">0</span>
+        </h3>
+        <div id="go-leaderboard" style="display:none; text-align:left; width:min(440px, 90vw); margin:0 auto 25px; background:rgba(0,0,0,0.55); border:1px solid rgba(0,255,255,0.25); border-radius:8px; padding:12px 16px;">
+            <div style="color:var(--primary); font-size:15px; letter-spacing:2px; margin-bottom:8px; text-align:center; text-shadow:0 0 8px var(--primary);">深渊排行 // ENDLESS RECORDS</div>
+            <div id="go-records" style="font-size:13px;"></div>
+        </div>
+        <button class="btn" id="btn-restart">重新部署 (RETRY)</button>
+        <button class="btn btn-purple" id="btn-go-shop-from-die">升级机体 (ARMORY)</button>
+        <button class="btn" id="btn-quit-to-menu">撤退至主菜单</button>
+    </div>
+
+    <!-- 轨道军械库 (商店) -->
+    <div id="shop-screen" class="overlay hidden">
+        <div id="shop-container">
+            <div class="shop-header">
+                <div><h2 style="margin:0; text-shadow: 0 0 10px #fff;">轨道军械库 <span style="font-size: 16px; color: #888;">// ORBITAL ARMORY</span></h2></div>
+                <div class="coin-display" style="margin:0;">CREDITS: 💰 <span id="shop-coin-count">0</span></div>
+            </div>
+            <div class="shop-tabs">
+                <button class="tab-btn active" data-target="panel-main">主战机强化</button>
+                <button class="tab-btn" data-target="panel-wingman">僚机部署</button>
+                <button class="tab-btn" data-target="panel-skins">特殊涂装</button>
+                <button class="tab-btn" data-target="panel-weapons">武器流派</button>
+                <button class="tab-btn" data-target="panel-chips">战术芯片</button>
+            </div>
+            <div class="shop-content">
+                <div id="panel-main" class="shop-panel active"></div>
+                <div id="panel-wingman" class="shop-panel"></div>
+                <div id="panel-skins" class="shop-panel"></div>
+                <div id="panel-weapons" class="shop-panel"></div>
+                <div id="panel-chips" class="shop-panel"></div>
+            </div>
+            <div style="text-align: center; margin-top: 25px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+                <button class="btn" id="btn-close-shop">系统确认 / 返回</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 暂停菜单 -->
+    <div id="pause-screen" class="overlay hidden">
+        <div id="pause-panel">
+            <h2 style="color: var(--primary); text-shadow: 0 0 15px var(--primary); font-weight:bold; margin:0;">任务暂停 (PAUSED)</h2>
+            <div class="pause-grid">
+                <div class="pause-col">
+                    <h4>操作指令</h4>
+                    <p>
+                        [W A S D] / 方向键 — 机动<br>
+                        [空格] / [K] — 主炮开火<br>
+                        [SHIFT] 按住 — 专注模式 (低速精密瞄准)<br>
+                        [F] — 过载冲击波 (擦弹充满能量后)<br>
+                        [Q] — 全屏清场炸弹<br>
+                        [E] — 绝对无敌护盾 (3s)<br>
+                        [ESC] / [P] — 暂停<br>
+                        [M] — 静音切换
+                    </p>
+                </div>
+                <div class="pause-col">
+                    <h4>战机属性</h4>
+                    <div class="stat-row"><span>耐久上限</span><b id="ps-hp">-</b></div>
+                    <div class="stat-row"><span>主炮伤害</span><b id="ps-dmg">-</b></div>
+                    <div class="stat-row"><span>射速</span><b id="ps-rate">-</b></div>
+                    <div class="stat-row"><span>机动速度</span><b id="ps-speed">-</b></div>
+                    <div class="stat-row"><span>主武器模块</span><b id="ps-weapon">-</b></div>
+                </div>
+            </div>
+            <button class="btn" id="btn-resume">继续游戏 (RESUME)</button>
+            <button class="btn btn-purple" id="btn-abandon">放弃任务 (ABANDON)</button>
+        </div>
+    </div>
+
+    <!-- 成就档案 -->
+    <div id="achievements-screen" class="overlay hidden">
+        <div id="ach-screen-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0; color:var(--gold); text-shadow: 0 0 15px rgba(255,215,0,0.5);">成就档案 (ACHIEVEMENTS)</h2>
+                <button class="btn" id="btn-close-ach">返回主菜单</button>
+            </div>
+            <div id="ach-list"></div>
+        </div>
+    </div>
+    
+    <!-- 最终胜利界面 -->
+    <div id="victory-screen" class="overlay hidden">
+        <h1 style="color: var(--success); text-shadow: 0 0 30px var(--success);">全境突围成功</h1>
+        <h2 style="font-size: 24px; margin-bottom: 40px; color:#ddd; line-height: 1.5; text-align: center;">
+            指挥官，你已击溃五大星区的所有霸主。<br>宇宙恢复了和平，你的传奇将被永远铭记。
+        </h2>
+        <button class="btn btn-gold" id="btn-victory-back">返回战术星图</button>
+    </div>
+</div>
+
+<script>
+/**
+ * ============================================================================
+ * 修复声明：
+ * 添加了遗失的全局变量（如 player、wingmen、particles、floatingTexts 等），
+ * 避免抛出 ReferenceError 导致引擎卡死。
+ * ============================================================================
+ */
+let player = null;
+let wingmen = [];
+let particles = [];
+let floatingTexts = [];
+let shakeConfig = { intensity: 0, duration: 0 };
+let frameCount = 0;
+
+
+// 默认玩家升级属性模板
+const DEFAULT_UPGRADES = {
+    maxHp: { val: 100, lvl: 1, cost: 1500, inc: 25, maxLvl: 20, name: "钛合金装甲 (护盾上限)" },
+    damage: { val: 15, lvl: 1, cost: 2000, inc: 5, maxLvl: 15, name: "等离子线圈 (主炮伤害)" },
+    fireRate: { val: 12, lvl: 1, cost: 2500, inc: -1, maxLvl: 8, name: "液氮冷却 (射速提升)" },
+    speed: { val: 6, lvl: 1, cost: 1200, inc: 0.5, maxLvl: 10, name: "离子推进器 (机动速度)" },
+    wingmanCount: { val: 0, lvl: 0, cost: 10000, inc: 1, maxLvl: 2, name: "无人机舱 (僚机数量)" },
+    wingmanDmg: { val: 8, lvl: 1, cost: 2500, inc: 4, maxLvl: 15, name: "僚机火控 (僚机伤害)" },
+    wingmanRate: { val: 20, lvl: 1, cost: 3500, inc: -2, maxLvl: 8, name: "僚机超频 (僚机射速)" }
+};
+
+const DEFAULT_SKINS = [
+    { id: 'blue', color: '#00ffff', name: '极光幽灵 (默认)', cost: 0, owned: true },
+    { id: 'red', color: '#ff3333', name: '地狱火风暴', cost: 20000, owned: false },
+    { id: 'green', color: '#00ff66', name: '猛毒绿翼', cost: 35000, owned: false },
+    { id: 'gold', color: '#ffd700', name: '皇家流金', cost: 60000, owned: false },
+    { id: 'purple', color: '#ff00ff', name: '虚空暗雷', cost: 100000, owned: false },
+    { id: 'void', color: '#8a2be2', name: '虚空之影 (成就限定)', cost: Infinity, owned: false },
+    { id: 'magma', color: '#ff4500', name: '熔金战魂 (成就限定)', cost: Infinity, owned: false }
+];
+
+const SaveSystem = {
+    data: {
+        coins: 0,
+        unlockedWorld: 1, 
+        unlockedStage: 1,
+        stageRecords: {}, 
+        upgrades: JSON.parse(JSON.stringify(DEFAULT_UPGRADES)),
+        skins: JSON.parse(JSON.stringify(DEFAULT_SKINS)),
+        equippedSkin: '#00ffff',
+        achievements: {},
+        kills: {},
+        weapons: { pierce: { owned: false }, homing: { owned: false }, shotgun: { owned: false } },
+        weaponModule: 'linear',
+        chips: { owned: [], equipped: {} },
+        equippedChips: [],
+        evolutions: {},
+        endlessUnlocked: false,
+        maxEndlessWave: 0,
+        endlessRecords: [],
+        stats: { grazes: 0, shockwaves: 0, eliteKills: 0, bossKills: 0, coinsEarned: 0, minis: 0 }
+    },
+    load() {
+        try {
+            let saved = localStorage.getItem('StarOrbitSaveV2');
+            if (saved) {
+                let parsed = JSON.parse(saved);
+                this.data = { ...this.data, ...parsed }; 
+                this.data.upgrades = { ...this.data.upgrades, ...(parsed.upgrades || {}) };
+                this.data.weapons = { ...this.data.weapons, ...(parsed.weapons || {}) };
+                this.data.kills = { ...this.data.kills, ...(parsed.kills || {}) };
+                this.data.achievements = { ...this.data.achievements, ...(parsed.achievements || {}) };
+                this.data.evolutions = { ...this.data.evolutions, ...(parsed.evolutions || {}) };
+                this.data.stats = { ...this.data.stats, ...(parsed.stats || {}) };
+                if (!this.data.chips) this.data.chips = { owned: [], equipped: {} };
+                else {
+                    this.data.chips.owned = this.data.chips.owned || [];
+                    this.data.chips.equipped = this.data.chips.equipped || {};
+                }
+                if (!Array.isArray(this.data.endlessRecords)) this.data.endlessRecords = [];
+                if (!Array.isArray(this.data.equippedChips)) this.data.equippedChips = [];
+                for (let k in DEFAULT_UPGRADES) {
+                    let st = this.data.upgrades[k];
+                    if (st && st.cost < DEFAULT_UPGRADES[k].cost) st.cost = DEFAULT_UPGRADES[k].cost;
+                }
+            }
+        } catch (e) {}
+    },
+    addEndlessRecord(wave, score) {
+        this.data.endlessRecords.push({ wave, score, date: Date.now() });
+        this.data.endlessRecords.sort((a, b) => b.wave - a.wave || b.score - a.score);
+        if (this.data.endlessRecords.length > 10) this.data.endlessRecords.length = 10;
+        this.save();
+    },
+    save() {
+        try { localStorage.setItem('StarOrbitSaveV2', JSON.stringify(this.data)); } catch (e) {}
+    },
+    isCleared(world, stage) { return !!this.data.stageRecords[`${world}-${stage}`]; },
+    isUnlocked(world, stage) {
+        if (world < this.data.unlockedWorld) return true;
+        if (world === this.data.unlockedWorld && stage <= this.data.unlockedStage) return true;
+        return false;
+    },
+    recordClear(world, stage, score, rank, noHit) {
+        let key = `${world}-${stage}`;
+        let existing = this.data.stageRecords[key];
+        if (!existing || score > existing.score) {
+            this.data.stageRecords[key] = { score, rank, noHit: !!noHit };
+        } else if (noHit && !existing.noHit) {
+            existing.noHit = true;
+        }
+        if (world === this.data.unlockedWorld && stage === this.data.unlockedStage) {
+            if (stage < 5) {
+                this.data.unlockedStage++;
+            } else {
+                if (world < 5) {
+                    this.data.unlockedWorld++;
+                    this.data.unlockedStage = 1;
+                }
+            }
+        }
+        if (world === 5 && stage === 5) this.data.endlessUnlocked = true;
+        this.save();
+    },
+    addCoins(amount) { this.data.coins += amount; this.save(); },
+    addKill(type) {
+        this.data.kills[type] = (this.data.kills[type] || 0) + 1;
+        this.data.kills.total = (this.data.kills.total || 0) + 1;
+    },
+    hasAchievement(id) { return !!this.data.achievements[id]; },
+    getSRankCount() {
+        let c = 0;
+        Object.values(this.data.stageRecords).forEach(r => { if (r && r.rank === 'S') c++; });
+        return c;
+    },
+    allStagesCleared() {
+        for (let w = 1; w <= 5; w++) for (let s = 1; s <= 5; s++) if (!this.isCleared(w, s)) return false;
+        return true;
+    },
+    hasChip(id) { return this.data.equippedChips.indexOf(id) >= 0; },
+    equippedChip(cat) { return this.data.chips.equipped[cat] || null; },
+    hasEvolution(id) { return Object.values(this.data.evolutions).indexOf(id) >= 0; },
+    getEvolution(world) { return this.data.evolutions[world] || null; },
+    setEvolution(world, id) { this.data.evolutions[world] = id; this.save(); },
+    getMasteryLevel(type) {
+        let n = this.data.kills[type] || 0, lv = 0;
+        for (let i = 0; i < MASTERY_TIERS.length; i++) if (n >= MASTERY_TIERS[i]) lv = i + 1;
+        return lv;
+    },
+    getMasteryBonus(type) { return MASTERY_BONUS[this.getMasteryLevel(type)] || 0; },
+    addStat(key, n) { this.data.stats[key] = (this.data.stats[key] || 0) + (n || 1); },
+    getStat(key) { return this.data.stats[key] || 0; }
+};
+
+SaveSystem.load();
+
+const ENEMY_DB = {
+    "basic": { id: "basic", name: "V-1 拦截机", hpStr: "低", dmgStr: "低", desc: "最基础的量产型无人机，通常成群结队直接向下俯冲撞击。未装备远程武器。" },
+    "tank": { id: "tank", name: "T-800 重甲护卫舰", hpStr: "极高", dmgStr: "致命(撞击)", desc: "覆盖了超厚重装甲的慢速战舰。虽然移动缓慢且无子弹，但极难摧毁，撞击会导致护盾严重受损。" },
+    "swerve": { id: "swerve", name: "S-弧光 游击机", hpStr: "中", dmgStr: "中", desc: "采用正弦波轨迹飞行的敏捷战机，极难被线性武器瞄准，并且会定期向正下方发射等离子球。" },
+    "sniper": { id: "sniper", name: "X-瞳 轨道狙击机", hpStr: "中高", dmgStr: "极高(激光)", desc: "降落至指定高度后会悬停，并使用红外线锁定玩家位置，随后发射高速穿透激光。" },
+    "kamikaze": { id: "kamikaze", name: "K-蜂群 自爆无人机", hpStr: "极低", dmgStr: "高", desc: "极其烦人的微型高速自爆机，能感知玩家横向位置并进行追踪。建议优先清理。" },
+    "shieldDrone": { id: "shieldDrone", name: "D-庇护 护盾无人机", hpStr: "高", dmgStr: "无", desc: "自身不具备攻击力，但移动轨迹难以捉摸。它真正的威胁在于其厚重的血量，常用于阻挡玩家火力。" },
+    "stealth": { id: "stealth", name: "幽影 隐形战机", hpStr: "低", dmgStr: "高", desc: "装备了光学迷彩，会周期性隐形（隐形期间免疫伤害），并在显形瞬间发射多向散弹。" },
+    "boss1": { id: "boss1", name: "星际重型巡洋舰", hpStr: "BOSS", dmgStr: "高", desc: "第一星区的霸主。体型宽大，装备双管主炮。装甲受损过半时将启动超频模式，释放密集扫射网。" },
+    "boss2": { id: "boss2", name: "双子星共生核心", hpStr: "BOSS", dmgStr: "高", desc: "由能量桥连接的双核心构造体。擅长横向拉扯，并能不断折跃游击机进行骚扰。狂暴后双核心将进行交叉激光扫射。" },
+    "boss3": { id: "boss3", name: "虚空虫巢母舰", hpStr: "BOSS", dmgStr: "极高", desc: "异星生物科技的结晶。本身移动缓慢，但会源源不断孵化自爆蜂群。狂暴状态下将喷吐大范围毒液弹幕。" },
+    "boss4": { id: "boss4", name: "轨道死光防御矩阵", hpStr: "BOSS", dmgStr: "极高", desc: "由失控AI掌管的巨型六边形防御站。持续旋转并释放无死角的螺旋弹幕地狱。狂暴后弹幕密度将翻倍。" },
+    "boss5": { id: "boss5", name: "深渊霸主·毁灭者", hpStr: "BOSS", dmgStr: "致命", desc: "深渊核心的最终恐惧。拥有多重武装，能折跃高阶精英怪护驾，并能锁定玩家发射毁灭性的追踪死光。" }
+};
+
+const getStars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
+const WORLD_THEMES = [
+    { bg: 1, name: "边界星区 (Border Sector)", color: "#00ffff" },
+    { bg: 2, name: "紫晶星云 (Amethyst Nebula)", color: "#ff00ff" },
+    { bg: 3, name: "破碎陨石带 (Shattered Belt)", color: "#aaaaaa" },
+    { bg: 4, name: "矩阵数据流 (Data Matrix)", color: "#00ff66" },
+    { bg: 5, name: "深渊核心 (Abyssal Core)", color: "#ff3333" }
+];
+
+const STAGE_DATABASE = [];
+const BOSS_SC = { 1: 1000, 2: 1500, 3: 2500, 4: 4000, 5: 8000 };
+for (let w = 1; w <= 5; w++) {
+    let diffBase = w; 
+    for (let s = 1; s <= 5; s++) {
+        let isBoss = (s === 5);
+        let id = `${w}-${s}`;
+        let config = {
+            world: w, stage: s, id: id,
+            title: isBoss ? `[首领战] ${WORLD_THEMES[w-1].name}` : `星区 ${w} - 防区 ${s}`,
+            diffStr: getStars(isBoss ? Math.min(5, diffBase + 1) : diffBase),
+            bgTheme: WORLD_THEMES[w-1].bg,
+            scoreThresholds: isBoss
+                ? { S: 6000 + Math.round(BOSS_SC[w] * 2.3), A: 4800 + Math.round(BOSS_SC[w] * 1.9), B: 3700 + Math.round(BOSS_SC[w] * 1.45), C: 2800 + Math.round(BOSS_SC[w] * 1.05) }
+                : { S: 5200 + w * 600, A: 4100 + w * 460, B: 3100 + w * 320, C: 2300 + w * 220 },
+            targetWave: isBoss ? 1 : 3 + Math.floor(w/2) + Math.floor(s/2), 
+            spawnInterval: Math.max(30, 90 - (w * 8) - (s * 3)), 
+            enemyPool: [], bossId: isBoss ? `boss${w}` : null
+        };
+
+        if (!isBoss) {
+            if (w === 1) {
+                if (s <= 2) config.enemyPool = ["basic"];
+                else if (s === 3) config.enemyPool = ["basic", "tank"];
+                else config.enemyPool = ["basic", "tank", "swerve"];
+            } else if (w === 2) {
+                config.enemyPool = ["basic", "swerve", "kamikaze"];
+                if (s >= 3) config.enemyPool.push("shieldDrone");
+            } else if (w === 3) {
+                config.enemyPool = ["tank", "sniper", "shieldDrone"];
+                if (s >= 4) config.enemyPool.push("kamikaze");
+            } else if (w === 4) {
+                config.enemyPool = ["swerve", "stealth", "sniper"];
+                if (s >= 3) config.enemyPool.push("basic");
+            } else if (w === 5) {
+                config.enemyPool = ["basic", "tank", "swerve", "sniper", "kamikaze", "stealth"];
+            }
+        } else {
+            config.enemyPool = [config.bossId];
+        }
+        STAGE_DATABASE.push(config);
+    }
+}
+
+function getStageConfig(world, stage) { return STAGE_DATABASE.find(c => c.world === world && c.stage === stage); }
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
+        let r = typeof radii === 'number' ? Math.min(radii, w / 2, h / 2) : 0;
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+    };
+}
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+
+const Utils = {
+    rnd: (min, max) => Math.random() * (max - min) + min,
+    dist: (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1),
+    checkCollision: (r1, r2, padding = 4) => {
+        return r1.x + padding < r2.x + r2.width - padding && r1.x + r1.width - padding > r2.x + padding &&
+               r1.y + padding < r2.y + r2.height - padding && r1.y + r1.height - padding > r2.y + padding;
+    },
+    hexToRgba: (hex, alpha) => {
+        let r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    },
+    shakeScreen: (intensity, duration) => { shakeConfig.intensity = intensity; shakeConfig.duration = duration; },
+    showMsg: (text, color="#ffffff") => {
+        let el = document.getElementById('sys-msg');
+        el.innerText = text; el.style.color = color;
+        el.style.textShadow = `0 0 20px #fff, 0 0 40px ${color}`;
+        el.style.opacity = 1; el.style.transform = "translate(-50%, -50%) scale(1.2)";
+        setTimeout(() => { el.style.transform = "translate(-50%, -50%) scale(1)"; el.style.opacity = 0; }, 2000);
+    }
+};
+
+function varCSS(name) {
+    return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+class MapManager {
+    constructor() { this.theme = 1; this.bgObjects = { far: [], mid: [], near: [] }; }
+    setTheme(level) {
+        this.theme = level; this.bgObjects = { far: [], mid: [], near: [] };
+        for(let i=0; i<150; i++) this.spawnObj('far', true);
+        for(let i=0; i<20; i++) this.spawnObj('mid', true);
+        let nearCount = level === 3 ? 15 : (level === 4 ? 40 : 5);
+        for(let i=0; i<nearCount; i++) this.spawnObj('near', true);
+    }
+    spawnObj(layer, randomY = false) {
+        let y = randomY ? Utils.rnd(0, HEIGHT) : -100; let x = Utils.rnd(0, WIDTH);
+        if (layer === 'far') { this.bgObjects.far.push({ x, y, size: Utils.rnd(0.5, 1.5), speed: Utils.rnd(0.2, 0.8), color: `rgba(255,255,255,${Utils.rnd(0.3, 0.8)})` }); } 
+        else if (layer === 'mid') {
+            let color, size, speed;
+            if(this.theme === 1) { color = `rgba(0,100,255,0.05)`; size = Utils.rnd(50, 150); speed = 0.5; }
+            else if(this.theme === 2) { color = `rgba(200,0,200,0.08)`; size = Utils.rnd(80, 200); speed = 0.6; }
+            else if(this.theme === 3) { color = `rgba(50,50,50,0.3)`; size = Utils.rnd(20, 60); speed = 1.0; }
+            else if(this.theme === 4) { color = `rgba(0,255,100,0.05)`; size = Utils.rnd(100, 300); speed = 1.5; }
+            else { color = `rgba(255,0,0,0.06)`; size = Utils.rnd(100, 250); speed = 0.8; }
+            this.bgObjects.mid.push({ x, y, size, speed, color });
+        } else if (layer === 'near') {
+            let obj = { x, y, speed: Utils.rnd(2, 6) };
+            if(this.theme === 1 || this.theme === 2) { obj.size = Utils.rnd(1, 3); obj.color = "#fff"; obj.type = "star"; }
+            else if(this.theme === 3) { obj.size = Utils.rnd(15, 40); obj.color = "#444"; obj.type = "asteroid"; obj.rot = Utils.rnd(0, Math.PI*2); obj.dr = Utils.rnd(-0.02, 0.02); }
+            else if(this.theme === 4) { obj.size = Utils.rnd(2, 4); obj.color = "#00ff66"; obj.type = "dataLine"; obj.speed *= 2; }
+            else { obj.size = Utils.rnd(2, 6); obj.color = Utils.rnd()>0.5?"#ff3333":"#660000"; obj.type = "ember"; obj.speed *= 1.5; }
+            this.bgObjects.near.push(obj);
+        }
+    }
+    updateAndDraw(ctx) {
+        let baseColor = ["#020205", "#050210", "#030303", "#001005", "#100000"][this.theme-1] || "#020205";
+        ctx.fillStyle = baseColor; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.globalCompositeOperation = "screen";
+        ['far', 'mid', 'near'].forEach(layer => {
+            for(let i = this.bgObjects[layer].length - 1; i >= 0; i--) {
+                let p = this.bgObjects[layer][i]; p.y += p.speed; ctx.fillStyle = p.color;
+                if(layer === 'mid') {
+                    let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+                    grad.addColorStop(0, p.color); grad.addColorStop(1, "transparent");
+                    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+                } else if(p.type === "asteroid") {
+                    p.rot += p.dr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+                    ctx.beginPath(); ctx.moveTo(-p.size/2, -p.size/2); ctx.lineTo(p.size/2, -p.size/3);
+                    ctx.lineTo(p.size/3, p.size/2); ctx.lineTo(-p.size/3, p.size/3);
+                    ctx.closePath(); ctx.fill(); ctx.restore();
+                } else if(p.type === "dataLine") { ctx.fillRect(p.x, p.y, p.size/2, p.size*6); } 
+                else { ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); }
+                if(p.y > HEIGHT + (p.size||10)) { this.bgObjects[layer].splice(i, 1); this.spawnObj(layer, false); }
+            }
+        });
+        ctx.globalCompositeOperation = "source-over"; 
+    }
+}
+const mapMgr = new MapManager();
+
+class Particle {
+    constructor(x, y, color, size, speed, type="normal") {
+        this.x = x; this.y = y; this.color = color;
+        let ang = type === "trail" ? Utils.rnd(Math.PI*0.4, Math.PI*0.6) : Utils.rnd(0, Math.PI*2);
+        this.vx = Math.cos(ang) * speed; this.vy = Math.sin(ang) * speed;
+        this.decay = type === "trail" ? Utils.rnd(0.05, 0.1) : Utils.rnd(0.01, 0.04);
+        this.life = 1.0; this.size = size; this.type = type;
+    }
+    update(ctx) {
+        this.x += this.vx; this.y += this.vy; this.life -= this.decay; if (this.life <= 0) return;
+        ctx.globalAlpha = this.life; ctx.fillStyle = this.color;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+class FloatingText {
+    constructor(x, y, text, color, size=16) {
+        this.x = x + Utils.rnd(-5, 5); this.y = y; this.text = text; this.color = color; this.size = size;
+        this.life = 1.0; this.vy = -1.5; this.vx = Utils.rnd(-0.5, 0.5);
+    }
+    update(ctx) {
+        this.x += this.vx; this.y += this.vy; this.life -= 0.02; if(this.life <= 0) return;
+        ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color; 
+        ctx.font = `bold ${this.size}px ${getComputedStyle(document.body).getPropertyValue('--font-main')}`;
+        ctx.lineWidth = 2; ctx.strokeStyle = "#000";
+        ctx.strokeText(this.text, this.x, this.y); ctx.fillText(this.text, this.x, this.y);
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+const VFX = {
+    explosion: (x, y, color, count=20, baseSize=5) => { for(let i=0; i<count; i++) particles.push(new Particle(x, y, Utils.rnd()>0.7?"#fff":color, Utils.rnd(baseSize*0.5, baseSize*1.5), Utils.rnd(2, 10), "spark")); },
+    engineTrail: (x, y, color) => { particles.push(new Particle(x+Utils.rnd(-4,4), y, color, Utils.rnd(3, 5), Utils.rnd(1, 3), "trail")); },
+    damageText: (x, y, text, type="normal") => { floatingTexts.push(new FloatingText(x, y, text, type==="crit"?"#ff00ff":(type==="heal"?"#00ff00":"#ffffff"), type==="crit"?24:16)); }
+};
+
+class Bullet {
+    constructor(x, y, vx, vy, color, damage, isEnemy, type="normal") {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.color = color; this.damage = damage; this.isEnemy = isEnemy; this.type = type;
+        this.active = true; this.width = type==="laser" ? 8 : (type==="circle" ? 14 : 6); this.height = type==="laser" ? 35 : (type==="circle" ? 14 : 18);
+        this.pierce = 1; this.homing = false; this.life = Infinity;
+    }
+    update(ctx) {
+        if(this.life !== Infinity) { this.life--; if(this.life <= 0) { this.active = false; return; } }
+        if(this.homing && !this.isEnemy) {
+            let best = null, bd = 1e9;
+            for(let e of GameEngine.enemies) {
+                if(e.active) {
+                    let d = Utils.dist(this.x, this.y, e.x + e.width/2, e.y + e.height/2);
+                    if(d < bd) { bd = d; best = e; }
+                }
+            }
+            if(best) {
+                let tx = best.x + best.width/2 - this.x, ty = best.y + best.height/2 - this.y;
+                let m = Math.hypot(tx, ty) || 1;
+                this.vx += (tx/m) * 0.5; this.vy += (ty/m) * 0.5;
+                let sp = Math.hypot(this.vx, this.vy);
+                if(sp > 10) { this.vx = this.vx/sp * 10; this.vy = this.vy/sp * 10; }
+            }
+        }
+        this.x += this.vx * GameEngine.timeScale; this.y += this.vy * GameEngine.timeScale;
+        if(this.y < -100 || this.y > HEIGHT+100 || this.x < -100 || this.x > WIDTH+100) this.active = false; if(!this.active) return;
+        ctx.save(); ctx.translate(this.x, this.y);
+        if(this.type !== "circle" && (this.vx !== 0 || this.vy !== 0)) { ctx.rotate(Math.atan2(this.vy, this.vx) - Math.PI/2); }
+        ctx.shadowBlur = 10; ctx.shadowColor = this.color;
+        
+        if (this.type === "circle") {
+            let grad = ctx.createRadialGradient(this.width/2, this.height/2, 0, this.width/2, this.height/2, this.width/2);
+            grad.addColorStop(0, "#fff"); grad.addColorStop(1, this.color);
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(this.width/2, this.height/2, this.width/2, 0, Math.PI*2); ctx.fill();
+        } else if (this.type === "laser") {
+            ctx.fillStyle = this.color; ctx.beginPath(); ctx.moveTo(this.width/2, 0); ctx.lineTo(this.width, this.height-5); ctx.lineTo(this.width/2, this.height); ctx.lineTo(0, this.height-5); ctx.fill();
+            ctx.fillStyle = "#fff"; ctx.fillRect(this.width/2 - 1, 5, 2, this.height - 10);
+        } else {
+            let grad = ctx.createLinearGradient(0, 0, 0, this.height); grad.addColorStop(0, "#fff"); grad.addColorStop(1, this.color);
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.roundRect(0, 0, this.width, this.height, 4); ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
+class Drop {
+    constructor(x, y, value=10) {
+        this.x = x; this.y = y; this.width = 20; this.height = 20;
+        this.vx = Utils.rnd(-3, 3); this.vy = Utils.rnd(-5, -2); this.value = value; this.rot = 0;
+    }
+    update(ctx) {
+        this.vy += 0.15; this.x += this.vx; this.y += this.vy; this.rot += 0.1;
+        if(player && player.hp > 0) {
+            let cx = player.x + player.width/2, cy = player.y + player.height/2; let d = Utils.dist(this.x, this.y, cx, cy);
+            let pullR = GameEngine.hasBuff('magnet') ? 5000 : 200;
+            if(d < pullR) {
+                let pull = (pullR - d) * 0.001; this.vx += (cx - this.x) * pull; this.vy += (cy - this.y) * pull;
+                let speed = Math.hypot(this.vx, this.vy); if(speed > 15) { this.vx = (this.vx/speed)*15; this.vy = (this.vy/speed)*15; }
+            }
+        }
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.rot); ctx.shadowBlur = 15; ctx.shadowColor = "#ffa500"; ctx.fillStyle = "#ffd700";
+        ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(8, 0); ctx.lineTo(0, 10); ctx.lineTo(-8, 0); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 10); ctx.lineTo(-8, 0); ctx.fill();
+        ctx.restore();
+    }
+}
+
+const Input = {
+    touchKeys: { up: false, down: false, left: false, right: false, fire: false, q: false, e: false, f: false, focus: false, pause: false },
+    touchPointers: new Map(),
+    keys: { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowLeft:false, ArrowDown:false, ArrowRight:false, " ":false, k:false, K:false,
+            q:false, Q:false, e:false, E:false, f:false, F:false, Shift:false, Escape:false, p:false, P:false, m:false, M:false },
+    init() {
+        window.addEventListener('keydown', e => {
+            AudioSys.ensureInit();
+            if(this.keys.hasOwnProperty(e.key)) this.keys[e.key] = true;
+        });
+        window.addEventListener('keyup', e => { if(this.keys.hasOwnProperty(e.key)) this.keys[e.key] = false; });
+        window.addEventListener('click', () => AudioSys.ensureInit(), { once: true });
+        document.querySelectorAll('#touch-controls [data-input]').forEach(button => {
+            button.addEventListener('pointerdown', e => {
+                e.preventDefault();
+                AudioSys.ensureInit();
+                const action = button.dataset.input;
+                this.touchPointers.set(e.pointerId, action);
+                this.touchKeys[action] = true;
+                button.classList.add('is-pressed');
+                try { button.setPointerCapture(e.pointerId); } catch (err) {}
+            });
+            const release = e => {
+                const action = this.touchPointers.get(e.pointerId);
+                if (!action) return;
+                this.touchPointers.delete(e.pointerId);
+                this.touchKeys[action] = Array.from(this.touchPointers.values()).includes(action);
+                button.classList.toggle('is-pressed', this.touchKeys[action]);
+            };
+            button.addEventListener('pointerup', release);
+            button.addEventListener('pointercancel', () => this.clearTouch());
+            button.addEventListener('lostpointercapture', release);
+        });
+        document.addEventListener('visibilitychange', () => { if (document.hidden) this.clearTouch(); });
+    },
+    clearTouch() {
+        this.touchPointers.clear();
+        Object.keys(this.touchKeys).forEach(action => { this.touchKeys[action] = false; });
+        document.querySelectorAll('#touch-controls .is-pressed').forEach(button => button.classList.remove('is-pressed'));
+    },
+    isUp() { return this.keys.w || this.keys.ArrowUp || this.touchKeys.up; }, isDown() { return this.keys.s || this.keys.ArrowDown || this.touchKeys.down; },
+    isLeft() { return this.keys.a || this.keys.ArrowLeft || this.touchKeys.left; }, isRight() { return this.keys.d || this.keys.ArrowRight || this.touchKeys.right; },
+    isFire() { return this.keys[" "] || this.keys.k || this.keys.K || this.touchKeys.fire; },
+    isQ() { return this.keys.q || this.keys.Q || this.touchKeys.q; },
+    isE() { return this.keys.e || this.keys.E || this.touchKeys.e; },
+    isF() { return this.keys.f || this.keys.F || this.touchKeys.f; },
+    isShift() { return this.keys.Shift || this.touchKeys.focus; },
+    isPause() { return this.keys.Escape || this.keys.p || this.keys.P || this.touchKeys.pause; },
+    isMute() { return this.keys.m || this.keys.M; }
+};
+Input.init();
+
+/* ============================================================================
+   音效与 BGM 系统 (Web Audio API, 全程序化合成, 无外部文件)
+   ============================================================================ */
+const AudioSys = {
+    ctx: null, master: null, sfxGain: null, musicGain: null,
+    musicTimer: null, musicType: null, muted: false, _lastLaser: 0, _lastExplosion: 0,
+    ensureInit() {
+        if (this.ctx) { try { if (this.ctx.state === 'suspended') this.ctx.resume(); } catch (e) {} return; }
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            this.ctx = new AC();
+            this.master = this.ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.85; this.master.connect(this.ctx.destination);
+            this.sfxGain = this.ctx.createGain(); this.sfxGain.gain.value = 0.9; this.sfxGain.connect(this.master);
+            this.musicGain = this.ctx.createGain(); this.musicGain.gain.value = 0.35; this.musicGain.connect(this.master);
+        } catch (e) { this.ctx = null; }
+    },
+    setMuted(m) {
+        this.muted = m;
+        if (this.master) this.master.gain.value = m ? 0 : 0.85;
+    },
+    toggleMute() { this.setMuted(!this.muted); return this.muted; },
+    _tone(freq, dur, type, vol, when = 0, sweepTo = null, dest = null) {
+        if (!this.ctx) return;
+        try {
+            let t = when || this.ctx.currentTime;
+            let o = this.ctx.createOscillator(), g = this.ctx.createGain();
+            o.type = type; o.frequency.setValueAtTime(freq, t);
+            if (sweepTo) o.frequency.linearRampToValueAtTime(sweepTo, t + dur);
+            g.gain.setValueAtTime(vol, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+            o.connect(g); g.connect(dest || this.sfxGain);
+            o.start(t); o.stop(t + dur + 0.02);
+        } catch (e) {}
+    },
+    _noise(dur, vol, freq) {
+        if (!this.ctx) return;
+        try {
+            let t = this.ctx.currentTime;
+            let buf = this.ctx.createBuffer(1, Math.max(1, Math.floor(this.ctx.sampleRate * dur)), this.ctx.sampleRate);
+            let d = buf.getChannelData(0);
+            for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+            let src = this.ctx.createBufferSource(); src.buffer = buf;
+            let f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(freq || 1000, t);
+            let g = this.ctx.createGain(); g.gain.setValueAtTime(vol, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+            src.connect(f); f.connect(g); g.connect(this.sfxGain);
+            src.start(t);
+        } catch (e) {}
+    },
+    playLaser() {
+        let now = Date.now(); if (now - this._lastLaser < 50) return; this._lastLaser = now;
+        this._tone(1400, 0.08, 'sawtooth', 0.1, 0, 240);
+    },
+    playCoin() { this._tone(1200, 0.06, 'sine', 0.16); this._tone(1800, 0.1, 'sine', 0.16, 0.05); },
+    playExplosion() {
+        let now = Date.now(); if (now - this._lastExplosion < 80) return; this._lastExplosion = now;
+        this._noise(0.3, 0.35, 450); this._tone(95, 0.3, 'sine', 0.3, 0, 40);
+    },
+    playBossBoom() { this._noise(1.4, 0.75, 220); this._tone(52, 1.4, 'sine', 0.75, 0, 24); this._noise(0.4, 0.4, 3000); },
+    playPowerup() { this._tone(620, 0.08, 'square', 0.14); this._tone(830, 0.08, 'square', 0.14, 0.08); this._tone(1240, 0.12, 'square', 0.14, 0.16); },
+    playShield() { this._tone(280, 0.35, 'sine', 0.25, 0, 920); this._tone(560, 0.3, 'sine', 0.12, 0.1, 1800); },
+    playBomb() { this._noise(0.9, 0.7, 260); this._tone(140, 0.8, 'square', 0.45, 0, 30); this._noise(0.5, 0.5, 6000); },
+    playSlow() { this._tone(900, 0.5, 'sine', 0.25, 0, 140); },
+    playHit() { this._noise(0.15, 0.4, 260); this._tone(120, 0.12, 'square', 0.3, 0, 55); },
+    playWarning() { this._tone(880, 0.1, 'square', 0.14); this._tone(880, 0.1, 'square', 0.14, 0.16); },
+    playAchievement() { [523, 659, 784, 1046].forEach((f, i) => this._tone(f, 0.16, 'triangle', 0.22, i * 0.09)); },
+    playClick() { this._tone(640, 0.05, 'square', 0.07); },
+    startMenuMusic() {
+        if (!this.ctx || this.muted || this.musicType === 'menu') return;
+        this.stopMusic(); this.musicType = 'menu';
+        const notes = [220, 261.63, 329.63, 392, 329.63, 261.63, 329.63, 392];
+        let step = 0;
+        this.musicTimer = setInterval(() => {
+            try {
+                let t = this.ctx.currentTime, f = notes[step % notes.length];
+                this._tone(f / 2, 0.35, 'triangle', 0.2, t, null, this.musicGain);
+                this._tone(f, 0.16, 'square', 0.04, t);
+                if (step % 4 === 0) this._tone(f * 2, 0.5, 'sine', 0.025, t + 0.2);
+                if (step % 8 === 4) this._noise(0.2, 0.05, 4000);
+                step++;
+            } catch (e) {}
+        }, 240);
+    },
+    startBattleMusic() {
+        if (!this.ctx || this.muted || this.musicType === 'battle') return;
+        this.stopMusic(); this.musicType = 'battle';
+        let step = 0;
+        this.musicTimer = setInterval(() => {
+            try {
+                let t = this.ctx.currentTime;
+                if (step % 2 === 0) { this._tone(58, 0.16, 'sine', 0.4, t); this._noise(0.12, 0.35, 130); }
+                if (step % 4 === 2) this._noise(0.05, 0.1, 6500);
+                if (step % 8 === 0) { this._tone(110, 0.28, 'sawtooth', 0.09, t); this._tone(165, 0.28, 'sawtooth', 0.06, t); }
+                if (step % 16 === 8) { this._tone(440, 0.3, 'square', 0.03, t); this._tone(554, 0.3, 'square', 0.025, t); }
+                step++;
+            } catch (e) {}
+        }, 180);
+    },
+    stopMusic() { if (this.musicTimer) { clearInterval(this.musicTimer); this.musicTimer = null; } this.musicType = null; },
+    startBossMusic() {
+        if (!this.ctx || this.muted || this.musicType === 'boss') return;
+        this.stopMusic(); this.musicType = 'boss';
+        let step = 0;
+        this.musicTimer = setInterval(() => {
+            try {
+                let t = this.ctx.currentTime;
+                if (step % 4 === 0) { this._tone(36, 0.5, 'sawtooth', 0.35, t); this._tone(72, 0.4, 'square', 0.14, t); this._noise(0.35, 0.3, 100); }
+                if (step % 4 === 2) { this._tone(43, 0.45, 'sawtooth', 0.3, t); this._tone(86, 0.3, 'square', 0.12, t); }
+                if (step % 2 === 1) this._tone(900, 0.07, 'square', 0.035, t);
+                step++;
+            } catch (e) {}
+        }, 220);
+    },
+    pauseMusic() { try { if (this.ctx) this.ctx.suspend(); } catch (e) {} },
+    resumeMusic() { try { if (this.ctx) this.ctx.resume(); } catch (e) {} }
+};
+
+/* ============================================================================
+   成就系统定义
+   ============================================================================ */
+const ACHIEVEMENTS = [
+    { id: 'first_boss', icon: '☠️', name: '初露锋芒', desc: '首次击破任意星区霸主', reward: 500 },
+    { id: 'flawless_stage', icon: '🛡️', name: '无伤突袭', desc: '无伤通关任意关卡', reward: 1000 },
+    { id: 'flawless_1_5', icon: '💎', name: '完美首捷', desc: '无伤通关 1-5 首领战', reward: 2000, skin: 'void' },
+    { id: 'kamikaze_100', icon: '🐝', name: '蜂群猎手', desc: '累计击落 100 架自爆无人机', reward: 800 },
+    { id: 'kamikaze_1000', icon: '☢️', name: '蜂群屠灭者', desc: '累计击落 1000 架自爆无人机', reward: 5000 },
+    { id: 's_rank_5', icon: '⭐', name: '传说指挥官', desc: '累计获得 5 次 S 级评价', reward: 3000, skin: 'magma' },
+    { id: 'combo_50', icon: '⚡', name: '连击新星', desc: '单次连击达到 50', reward: 400 },
+    { id: 'combo_150', icon: '🔥', name: '连击之神', desc: '单次连击达到 150', reward: 1500 },
+    { id: 'endless_10', icon: '🌊', name: '深渊初探', desc: '无尽模式突破 10 波', reward: 800 },
+    { id: 'endless_30', icon: '🐉', name: '深渊霸主', desc: '无尽模式突破 30 波', reward: 3000 },
+    { id: 'all_cleared', icon: '🚀', name: '星空解放者', desc: '通关全部 25 个关卡', reward: 5000 },
+    { id: 'chips_2', icon: '🔌', name: '双核驱动', desc: '同时安装 2 枚战术芯片', reward: 600 },
+    { id: 'chip_collector', icon: '💾', name: '芯片收藏家', desc: '拥有全部战术芯片', reward: 2500 },
+    { id: 'evo_all', icon: '🧬', name: '终极进化体', desc: '解锁全部 4 个分支进化', reward: 4000 },
+    { id: 'mastery_3', icon: '🎖️', name: '百战老兵', desc: '任一敌人精通达到 III 级 (+10% 伤害)', reward: 2500 },
+    { id: 'graze_500', icon: '🌀', name: '弹幕舞者', desc: '累计擦弹 500 次', reward: 1200 },
+    { id: 'shock_30', icon: '💥', name: '过载大师', desc: '累计释放 30 次过载冲击波', reward: 1000 },
+    { id: 'elite_50', icon: '☠️', name: '精英猎手', desc: '累计击破 50 名精英敌人', reward: 1500 },
+    { id: 'boss_hunter', icon: '👹', name: '霸主猎人', desc: '击破全部 5 种星区霸主', reward: 3000 },
+    { id: 'coins_100k', icon: '💰', name: '星际首富', desc: '累计获得 100,000 信用点', reward: 5000 },
+    { id: 'combo_300', icon: '🌋', name: '连击之神·究极', desc: '单次连击达到 300', reward: 3000 },
+    { id: 'endless_60', icon: '🌌', name: '深渊守望者', desc: '无尽模式突破 60 波', reward: 6000 },
+    { id: 's_rank_all', icon: '👑', name: '完美制霸', desc: '全部 25 关获得 S 级评价', reward: 10000 }
+];
+
+/* ============================================================================
+   主武器模块定义 (武器流派)
+   ============================================================================ */
+const WEAPON_DB = {
+    linear: { icon: '🔫', name: '线性速射炮', desc: '默认均衡主炮，随伤害等级进化出多管齐射。', cost: 0, rate: 1 },
+    pierce: { icon: '⚡', name: '穿透激光', desc: '伤害较低，但一道激光可贯穿一条直线上的所有敌人。', cost: 20000, rate: 1.4, dmg: 0.6, pierce: 5 },
+    homing: { icon: '🎯', name: '追踪导弹', desc: '射速较慢，但导弹会自动制导最近的敌人。', cost: 35000, rate: 2.2, dmg: 0.9, homing: true },
+    shotgun: { icon: '💥', name: '高频散弹', desc: '五联装贴脸弹幕，近身伤害极高，射程极短。', cost: 25000, rate: 0.55, dmg: 0.55, pellets: 5 }
+};
+
+/* ============================================================================
+   局内掉落 Buff (Power-ups)
+   ============================================================================ */
+const POWERUP_DB = {
+    rapid: { name: '急速装填', icon: '⏩', color: '#00ffff', dur: 300, desc: '射速翻倍 5 秒' },
+    spread: { name: '散射增强', icon: '✨', color: '#ffaa00', dur: 480, desc: '主炮追加双副炮 8 秒' },
+    shield: { name: '应急维修', icon: '🔧', color: '#00ff66', dur: 0, desc: '立即恢复 40 点护盾' },
+    magnet: { name: '全屏磁铁', icon: '🧲', color: '#ff00ff', dur: 300, desc: '全屏金币磁吸 5 秒' }
+};
+
+/* ============================================================================
+   战术芯片 (Tactical Chips)
+   ============================================================================ */
+const CHIP_DB = {
+    overdrive: { cat: 'attack', name: '过载引擎', icon: '⚡', color: '#ff5555', cost: 15000, desc: '牺牲 30% 护盾上限,换取 +25% 主炮伤害与移动速度' },
+    crit:      { cat: 'attack', name: '暴击核心', icon: '✦', color: '#ffaa00', cost: 18000, desc: '+15% 伤害;12% 概率造成 2.5 倍暴击' },
+    tempest:   { cat: 'attack', name: '暴风雨协议', icon: '🌩', color: '#88ccff', cost: 16000, desc: '射速 +10%,Q/E 技能冷却 -10%' },
+    nano:      { cat: 'defense', name: '纳米蜂群', icon: '🛡', color: '#66ff99', cost: 16000, desc: '护盾低于 20% 时自动展开 3 秒绝对防御 (冷却 60 秒)' },
+    armor:     { cat: 'defense', name: '复合装甲', icon: '▣', color: '#66bbff', cost: 14000, desc: '护盾上限 +20%' },
+    hull:      { cat: 'defense', name: '硬化龙骨', icon: '⬢', color: '#aaddff', cost: 13000, desc: '护盾上限 +10%,受到的伤害 -5%' },
+    magnet:    { cat: 'utility', name: '磁暴回能', icon: '♻', color: '#ff66cc', cost: 12000, desc: '拾取金币时,过载能量额外 +2%' },
+    relay:     { cat: 'utility', name: '能量继电器', icon: '⇅', color: '#ffe066', cost: 13000, desc: '擦弹额外 +60 分,技能充能速度 +25%' },
+    recycle:   { cat: 'utility', name: '回收协议', icon: '♺', color: '#66ffcc', cost: 11000, desc: '拾取金币时 8% 概率产生额外 $10' }
+};
+const CHIP_CAT_NAME = { attack: '攻击', defense: '防御', utility: '通用' };
+
+/* ============================================================================
+   分支进化 (Branch Evolution) - 通关第 2/3/4/5 星区首领战后二选一
+   ============================================================================ */
+const EVOLUTION_DB = {
+    2: [
+        { id: 'ion',         icon: '💥', name: '离子爆破流', color: '#ff8844', desc: '主炮伤害 +15%,连击得分倍率 +0.25。清小怪效率极高。', fx: '◆ 伤害 +15% (全局) · ◆ 得分倍率 +0.25' },
+        { id: 'annihilator', icon: '☢', name: '歼星激光流', color: '#ff4444', desc: '主炮化为高穿透持续激光 (贯穿 3 个目标),对 BOSS +15% 伤害。', fx: '◆ 激光贯穿 3 目标 · ◆ BOSS 伤害 +15%' }
+    ],
+    3: [
+        { id: 'magnetic', icon: '🧲', name: '磁暴护盾', color: '#44ff88', desc: '护盾上限 +30%,且每局开局获得 2 秒绝对防御。', fx: '◆ 护盾上限 +30% · ◆ 开局 2 秒绝对防御' },
+        { id: 'kinetic',  icon: '🏃', name: '动能爆发', color: '#44ccff', desc: '射速 +12%,移动速度 +10%。', fx: '◆ 射速 +12% · ◆ 移速 +10%' }
+    ],
+    4: [
+        { id: 'conductor', icon: '⚡', name: '过载增幅器', color: '#ffd700', desc: '擦弹充能效率 +40%,过载冲击波伤害 +50%。', fx: '◆ 擦弹充能 +40% · ◆ 过载伤害 +50%' },
+        { id: 'regen',     icon: '✚', name: '纳米修复', color: '#66ff66', desc: '5 秒未受伤后,每秒自动修复 3 点护盾。', fx: '◆ 5 秒后每秒自修 3 点护盾' }
+    ],
+    5: [
+        { id: 'overlord', icon: '👑', name: '最终武装', color: '#ff6666', desc: '所有伤害 +30%。', fx: '◆ 所有伤害 +30%' },
+        { id: 'engine',   icon: '⚙', name: '无限引擎', color: '#66ffcc', desc: '移动速度 +30%,射速 +15%。', fx: '◆ 移速 +30% · ◆ 射速 +15%' }
+    ]
+};
+
+/* ============================================================================
+   精英敌人词缀 (Elite Affixes)
+   ============================================================================ */
+const AFFIX_DB = {
+    shield: { name: '护盾立场', color: '#4488ff', desc: '正面直击伤害大幅减免,可被高频火力过载击穿' },
+    split:  { name: '分裂者', color: '#cc66ff', desc: '被击毁时原地分裂出 4 只微型自爆虫' },
+    drain:  { name: '吸能立场', color: '#ff4444', desc: '周期性吸收玩家子弹并转化为自身护盾' }
+};
+
+/* ============================================================================
+   图鉴精通 (Bestiary Mastery)
+   ============================================================================ */
+const MASTERY_TIERS = [50, 200, 800];
+const MASTERY_BONUS = [0, 0.03, 0.06, 0.10];
+
+class PowerUp {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.width = 26; this.height = 26; this.type = type;
+        this.vx = Utils.rnd(-3, 3); this.vy = Utils.rnd(-4, -2); this.rot = 0; this.active = true;
+    }
+    update(ctx) {
+        this.vy += 0.15; this.x += this.vx; this.y += this.vy; this.rot += 0.12;
+        if (player && player.hp > 0) {
+            let cx = player.x + player.width / 2, cy = player.y + player.height / 2;
+            let d = Utils.dist(this.x, this.y, cx, cy);
+            if (d < 170) {
+                let pull = (170 - d) * 0.0012;
+                this.vx += (cx - this.x) * pull; this.vy += (cy - this.y) * pull;
+                let sp = Math.hypot(this.vx, this.vy);
+                if (sp > 14) { this.vx = this.vx / sp * 14; this.vy = this.vy / sp * 14; }
+            }
+        }
+        let meta = POWERUP_DB[this.type];
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.rot);
+        ctx.shadowBlur = 16; ctx.shadowColor = meta.color;
+        ctx.fillStyle = meta.color; ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+        ctx.shadowBlur = 0; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+        ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+        ctx.fillStyle = "#111"; ctx.font = "bold 13px Courier New"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        let ch = { rapid: '»', spread: '·', shield: '+', magnet: 'U' }[this.type] || '?';
+        ctx.fillText(ch, 0, 1);
+        ctx.restore();
+    }
+}
+
+class Player {
+    constructor() {
+        this.width = 46; this.height = 56; this.x = WIDTH/2 - this.width/2; this.y = HEIGHT - 120;
+        this.maxHp = GameEngine.getMaxHpBase(); this.hp = this.maxHp;
+        this.speed = GameEngine.getSpeedBase();
+        this.vx = 0; this.vy = 0;
+        this.color = SaveSystem.data.equippedSkin; this.shootTimer = 0; this.history = []; this.invul = 90; this.tilt = 0;
+        this.shieldTimer = 0; this.nanoCooldown = 0;
+    }
+    update(ctx) {
+        if(this.invul > 0) this.invul--;
+        if(this.shieldTimer > 0) this.shieldTimer--;
+        if(this.nanoCooldown > 0) this.nanoCooldown--;
+        let focus = GameEngine.focusMode();
+        let spd = this.speed * (focus ? 0.5 : 1);
+        let dx=0, dy=0;
+        if(Input.isLeft()) { dx -= spd; this.tilt = Math.max(this.tilt - 0.1, -0.3); } else if(Input.isRight()) { dx += spd; this.tilt = Math.min(this.tilt + 0.1, 0.3); } else { this.tilt *= 0.8; }
+        if(Input.isUp()) dy -= spd; if(Input.isDown()) dy += spd;
+        if(dx!==0 && dy!==0) { let l = Math.hypot(dx,dy); dx=dx/l*spd; dy=dy/l*spd; }
+        if (GameEngine.emStorm > 0) {
+            this.vx += (dx - this.vx) * 0.12; this.vy += (dy - this.vy) * 0.12;
+            this.x += this.vx; this.y += this.vy;
+        } else {
+            this.vx = dx; this.vy = dy;
+            this.x += dx; this.y += dy;
+        }
+        if(this.x<0) this.x=0; if(this.x+this.width>WIDTH) this.x=WIDTH-this.width; if(this.y<0) this.y=0; if(this.y+this.height>HEIGHT) this.y=HEIGHT-this.height;
+        this.history.unshift({x: this.x, y: this.y}); if(this.history.length > 25) this.history.pop();
+
+        if(SaveSystem.hasChip('nano') && this.hp < this.maxHp * 0.2 && this.shieldTimer <= 0 && this.nanoCooldown <= 0) {
+            this.shieldTimer = 180; this.nanoCooldown = 3600;
+            Utils.showMsg('NANO SWARM SHIELD', '#0ff');
+            VFX.explosion(this.x + this.width/2, this.y + this.height/2, "#0ff", 30, 6);
+            AudioSys.playShield();
+        }
+
+        if(this.shootTimer > 0) this.shootTimer--;
+        if(Input.isFire() && this.shootTimer <= 0) {
+            let dmg = SaveSystem.data.upgrades.damage.val;
+            let mod = SaveSystem.data.weaponModule;
+            let mcfg = WEAPON_DB[mod] || WEAPON_DB.linear;
+            let cx = this.x + this.width/2;
+            let annihilator = SaveSystem.hasEvolution('annihilator');
+            let fireDmg = (b, mult) => { b.damage = dmg * mult; b.crit = GameEngine.rollCrit(); if (b.crit) b.damage *= 2.5; return b; };
+            if(mod === "pierce") {
+                let b = new Bullet(cx-2, this.y-12, 0, -22, this.color, dmg * (mcfg.dmg||0.6), false, "laser");
+                b.pierce = mcfg.pierce || 4; b.width = 6; b.height = 40;
+                GameEngine.bullets.push(fireDmg(b, 1));
+            } else if(mod === "homing") {
+                let b = new Bullet(cx-4, this.y-6, 0, -9, "#ff8800", dmg * (mcfg.dmg||0.9), false);
+                b.homing = true;
+                GameEngine.bullets.push(fireDmg(b, 1));
+            } else if(mod === "shotgun") {
+                for(let i=-2; i<=2; i++) {
+                    let a = i * 0.16;
+                    let b = new Bullet(cx-4, this.y-4, Math.sin(a)*14, -Math.cos(a)*14, "#ffdd00", dmg * (mcfg.dmg||0.55), false, "circle");
+                    b.life = 26;
+                    GameEngine.bullets.push(fireDmg(b, 1));
+                }
+            } else if (focus) {
+                let b = new Bullet(cx-2, this.y-14, 0, -26, "#ffffff", dmg * 1.25, false, "laser");
+                b.pierce = 2; b.width = 4; b.height = 46;
+                GameEngine.bullets.push(fireDmg(b, 1));
+            } else if (annihilator) {
+                let b = new Bullet(cx-2, this.y-12, 0, -24, "#ffffff", dmg * 0.9, false, "laser");
+                b.pierce = 3; b.width = 5; b.height = 44;
+                GameEngine.bullets.push(fireDmg(b, 1));
+            } else {
+                let lvl = SaveSystem.data.upgrades.damage.lvl;
+                if(lvl < 5) {
+                    GameEngine.bullets.push(fireDmg(new Bullet(cx-3, this.y-10, 0, -18, this.color, dmg, false), 1));
+                } else if (lvl < 10) {
+                    GameEngine.bullets.push(fireDmg(new Bullet(this.x+10, this.y-5, 0, -18, this.color, dmg*0.6, false), 1));
+                    GameEngine.bullets.push(fireDmg(new Bullet(this.x+this.width-16, this.y-5, 0, -18, this.color, dmg*0.6, false), 1));
+                } else {
+                    GameEngine.bullets.push(fireDmg(new Bullet(cx-4, this.y-15, 0, -20, this.color, dmg*0.5, false, "laser"), 1));
+                    GameEngine.bullets.push(fireDmg(new Bullet(this.x+5, this.y, -3, -16, this.color, dmg*0.4, false), 1));
+                    GameEngine.bullets.push(fireDmg(new Bullet(this.x+this.width-11, this.y, 3, -16, this.color, dmg*0.4, false), 1));
+                }
+            }
+            if(GameEngine.hasBuff('spread')) {
+                GameEngine.bullets.push(fireDmg(new Bullet(this.x+6, this.y-4, -2.4, -16, "#ffaa00", dmg*0.5, false, "circle"), 1));
+                GameEngine.bullets.push(fireDmg(new Bullet(this.x+this.width-12, this.y-4, 2.4, -16, "#ffaa00", dmg*0.5, false, "circle"), 1));
+            }
+            let rate = SaveSystem.data.upgrades.fireRate.val * GameEngine.getFireRateMult();
+            if(GameEngine.hasBuff('rapid')) rate = Math.max(3, Math.floor(rate * 0.5));
+            this.shootTimer = Math.max(3, Math.round(rate * (mcfg.rate || 1)));
+            AudioSys.playLaser();
+            this.y += 1;
+        }
+        let flameColor = Input.isUp() ? "#00ffff" : "#ff8800";
+        VFX.engineTrail(this.x + 13, this.y + this.height - 5, flameColor); VFX.engineTrail(this.x + this.width - 13, this.y + this.height - 5, flameColor);
+        this.draw(ctx);
+        if(this.shieldTimer > 0) {
+            ctx.save();
+            ctx.strokeStyle = "rgba(0,255,255,0.9)"; ctx.shadowBlur = 18; ctx.shadowColor = "#0ff"; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(this.x + this.width/2, this.y + this.height/2, 46 + Math.sin(frameCount*0.3)*4, 0, Math.PI*2); ctx.stroke();
+            ctx.restore();
+        }
+        if (focus && this.invul <= 0) {
+            let pcx = this.x + this.width/2, pcy = this.y + this.height/2;
+            ctx.save();
+            ctx.strokeStyle = "rgba(0,255,255,0.9)"; ctx.shadowBlur = 12; ctx.shadowColor = "#0ff"; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(pcx, pcy, 12, 0, Math.PI*2); ctx.stroke();
+            ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(pcx, pcy, 26, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = "rgba(0,255,255,0.8)"; ctx.beginPath(); ctx.arc(pcx, pcy, 2.5, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = "rgba(0,255,255,0.35)"; ctx.beginPath(); ctx.moveTo(pcx, pcy + 26); ctx.lineTo(pcx, pcy + 70); ctx.stroke();
+            ctx.restore();
+        }
+    }
+    
+    takeDamage(dmg) {
+        if(this.shieldTimer > 0) return;
+        if(this.invul > 0) return;
+        dmg = Math.round(dmg * GameEngine.getIncomingMult());
+        this.hp -= dmg; this.invul = 30; GameEngine.damageTaken += dmg;
+        GameEngine.lastDamageAt = Date.now();
+        GameEngine.combo = 0;
+        AudioSys.playHit();
+        Utils.shakeScreen(5, 10); VFX.explosion(this.x + this.width/2, this.y + this.height/2, this.color, 8, 3); VFX.damageText(this.x + this.width/2, this.y - 20, `-${dmg}`, "crit");
+        if(this.hp <= 0) {
+            this.hp = 0; Utils.shakeScreen(15, 30); VFX.explosion(this.x + this.width/2, this.y + this.height/2, "#ff5500", 60, 10);
+            setTimeout(() => { GameEngine.changeState(STATE.GAMEOVER); }, 1200);
+        }
+        UI.updateHUD();
+    }
+    
+    draw(ctx) {
+        if(this.invul > 0 && Math.floor(frameCount / 4) % 2 === 0) return; 
+        ctx.save(); ctx.translate(this.x + this.width/2, this.y + this.height/2); ctx.rotate(this.tilt); ctx.translate(-(this.x + this.width/2), -(this.y + this.height/2));
+        if(this.hp > this.maxHp * 0.3) {
+            ctx.shadowBlur = 15; ctx.shadowColor = this.color; ctx.strokeStyle = Utils.hexToRgba(this.color, 0.3 + Math.sin(frameCount*0.1)*0.1);
+            ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(this.x + this.width/2, this.y + this.height/2, this.width*0.8, this.height*0.8, 0, 0, Math.PI*2); ctx.stroke(); ctx.shadowBlur = 0;
+        }
+        ctx.fillStyle = "#1a1a24"; ctx.beginPath();
+        ctx.moveTo(this.x + this.width/2, this.y + 10); ctx.lineTo(this.x + this.width, this.y + this.height - 10); ctx.lineTo(this.x + this.width - 10, this.y + this.height); ctx.lineTo(this.x + 10, this.y + this.height);
+        ctx.lineTo(this.x, this.y + this.height - 10); ctx.fill(); ctx.strokeStyle = "#445"; ctx.stroke();
+        let hullGrad = ctx.createLinearGradient(this.x, this.y, this.x, this.y+this.height); hullGrad.addColorStop(0, "#ffffff"); hullGrad.addColorStop(0.2, this.color); hullGrad.addColorStop(1, "#222233");
+        ctx.fillStyle = hullGrad; ctx.beginPath();
+        ctx.moveTo(this.x + this.width/2, this.y); ctx.lineTo(this.x + this.width - 5, this.y + this.height - 20); ctx.lineTo(this.x + this.width/2, this.y + this.height - 15); ctx.lineTo(this.x + 5, this.y + this.height - 20); ctx.fill();
+        let glassGrad = ctx.createLinearGradient(this.x, this.y+15, this.x, this.y+35); glassGrad.addColorStop(0, "#0ff"); glassGrad.addColorStop(1, "#003");
+        ctx.fillStyle = glassGrad; ctx.beginPath(); ctx.ellipse(this.x + this.width/2, this.y + 25, 6, 12, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.ellipse(this.x + this.width/2 - 2, this.y + 20, 2, 4, Math.PI/4, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "#111"; ctx.fillRect(this.x + 10, this.y + this.height - 10, 6, 8); ctx.fillRect(this.x + this.width - 16, this.y + this.height - 10, 6, 8);
+        let pcx = this.x + this.width/2, pcy = this.y + this.height/2;
+        ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.shadowBlur = 8; ctx.shadowColor = this.color;
+        ctx.beginPath(); ctx.arc(pcx, pcy, 3.5, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(pcx, pcy, 6, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+}
+
+class Wingman {
+    constructor(index) { this.index = index; this.width = 18; this.height = 24; this.x = -100; this.y = -100; this.shootTimer = Utils.rnd(0, 20); }
+    update(ctx) {
+        if(!player || player.hp <= 0) return; let delay = this.index === 1 ? 12 : 24; let target = player.history[delay];
+        let tx = target ? target.x + (this.index === 1 ? -40 : player.width + 20) : player.x; let ty = target ? target.y + 15 : player.y;
+        this.x += (tx - this.x) * 0.15; this.y += (ty - this.y) * 0.15; this.y += Math.sin(frameCount * 0.1 + this.index) * 2;
+        if(this.shootTimer > 0) this.shootTimer--;
+        if(Input.isFire() && this.shootTimer <= 0) {
+            GameEngine.bullets.push(new Bullet(this.x + this.width/2 - 3, this.y - 5, 0, -15, "#ff0", SaveSystem.data.upgrades.wingmanDmg.val, false, "laser"));
+            this.shootTimer = SaveSystem.data.upgrades.wingmanRate.val; this.y += 3;
+        }
+        ctx.save(); ctx.translate(this.x, this.y); ctx.shadowBlur = 10; ctx.shadowColor = player.color; ctx.fillStyle = "#334"; ctx.beginPath();
+        ctx.moveTo(this.width/2, 0); ctx.lineTo(this.width, this.height); ctx.lineTo(this.width/2, this.height - 5); ctx.lineTo(0, this.height); ctx.fill();
+        ctx.fillStyle = player.color; ctx.beginPath(); ctx.moveTo(this.width/2, 5); ctx.lineTo(this.width-4, this.height-4); ctx.lineTo(this.width/2, this.height-8); ctx.lineTo(4, this.height-4); ctx.fill();
+        ctx.restore();
+    }
+}
+
+const EnemyRenderer = {
+    drawBasic: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = isHit ? "#fff" : color; ctx.shadowBlur = 10; ctx.shadowColor = color; ctx.beginPath(); ctx.moveTo(x+w/2, y+h); ctx.lineTo(x, y); ctx.lineTo(x+w/2, y+10); ctx.lineTo(x+w, y); ctx.fill(); },
+    drawTank: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = isHit ? "#fff" : "#444"; ctx.fillRect(x, y, w, h*0.8); ctx.fillStyle = "#222"; ctx.fillRect(x+w*0.2, y+h*0.8, w*0.6, h*0.2); ctx.fillStyle = (tick % 20 < 10) ? "#f00" : "#500"; ctx.beginPath(); ctx.arc(x+w/2, y+h*0.4, 10, 0, Math.PI*2); ctx.fill(); },
+    drawSwerve: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = isHit ? "#fff" : color; ctx.beginPath(); ctx.moveTo(x+w/2, y+h); ctx.lineTo(x+w, y+h/2); ctx.lineTo(x+w/2, y); ctx.lineTo(x, y+h/2); ctx.fill(); },
+    drawSniper: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = isHit ? "#fff" : "#113"; ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x+w, y+h/2); ctx.lineTo(x+w/2, y+h); ctx.lineTo(x, y+h/2); ctx.fill(); ctx.stroke(); ctx.fillStyle = (tick % 20 < 10) ? "#f00" : "#fff"; ctx.fillRect(x+w/2-4, y+h/2-4, 8, 8); },
+    drawKamikaze: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = isHit ? "#fff" : color; ctx.beginPath(); for(let i=0; i<16; i++) { let r = i%2===0 ? w/2 : w/4; let a = (i * Math.PI)/8 + (tick*0.1); ctx.lineTo(x+w/2 + Math.cos(a)*r, y+h/2 + Math.sin(a)*r); } ctx.fill(); },
+    drawShieldDrone: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(x+w/2, y+h/2, w/2-5, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x+w/2, y+h/2, w/2 + Math.sin(tick*0.1)*3, 0, Math.PI*2); ctx.stroke(); },
+    drawStealth: (ctx, x, y, w, h, isHit, color, tick) => { let alpha = Math.abs(Math.sin(tick*0.05)); ctx.fillStyle = `rgba(100,100,100,${alpha})`; ctx.strokeStyle = `rgba(0,255,0,${alpha})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w/2, y+h-10); ctx.lineTo(x, y+h); ctx.fill(); ctx.stroke(); },
+    drawBoss1: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = "#223"; ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x+w, y+h/3); ctx.lineTo(x+w-20, y+h); ctx.lineTo(x+20, y+h); ctx.lineTo(x, y+h/3); ctx.fill(); ctx.fillStyle = color; ctx.fillRect(x+w*0.2, y+h*0.2, w*0.6, h*0.6); ctx.fillStyle = "#555"; ctx.fillRect(x+30, y+h, 20, 30); ctx.fillRect(x+w-50, y+h, 20, 30); },
+    drawBoss2: (ctx, x, y, w, h, isHit, color, tick) => { let bw = w * 0.6; ctx.fillStyle = color; ctx.fillRect(x+w/2-bw/2, y+h/2-10, bw, 20); let drawCore = (ox) => { let grad = ctx.createRadialGradient(x+ox, y+h/2, 0, x+ox, y+h/2, 40); grad.addColorStop(0, "#fff"); grad.addColorStop(1, color); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x+ox, y+h/2, 40, 0, Math.PI*2); ctx.fill(); }; drawCore(30); drawCore(w-30); },
+    drawBoss3: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = "#121"; ctx.beginPath(); for(let i=0; i<Math.PI*2; i+=Math.PI/6) { let r = h/2 + Math.sin(tick*0.1 + i)*15; ctx.lineTo(x+w/2 + Math.cos(i)*r, y+h/2 + Math.sin(i)*r); } ctx.fill(); ctx.fillStyle = color; ctx.globalAlpha = 0.6 + Math.sin(tick*0.05)*0.4; ctx.beginPath(); ctx.arc(x+w/2, y+h/2, w/4, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0; },
+    drawBoss4: (ctx, x, y, w, h, isHit, color, tick) => { let cx = x+w/2, cy = y+h/2; ctx.save(); ctx.translate(cx, cy); ctx.rotate(tick * 0.05); ctx.strokeStyle = color; ctx.lineWidth = 10; ctx.beginPath(); for(let i=0; i<6; i++) { ctx.lineTo(Math.cos(i*Math.PI/3)*100, Math.sin(i*Math.PI/3)*100); } ctx.closePath(); ctx.stroke(); ctx.fillStyle = (tick%40<20) ? "#fff" : "#f00"; ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); ctx.restore(); },
+    drawBoss5: (ctx, x, y, w, h, isHit, color, tick) => { ctx.fillStyle = "#100"; ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x+w/2, y+h/2); ctx.lineTo(x-50, y-50+Math.sin(tick*0.05)*30); ctx.lineTo(x, y+h-50); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+w/2, y+h/2); ctx.lineTo(x+w+50, y-50+Math.sin(tick*0.05)*30); ctx.lineTo(x+w, y+h-50); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#300"; ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x+w/2+60, y+h/2); ctx.lineTo(x+w/2, y+h); ctx.lineTo(x+w/2-60, y+h/2); ctx.fill(); ctx.fillStyle = "#f00"; ctx.beginPath(); ctx.ellipse(x+w/2, y+h/2, 20, 40, 0, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = "#ff0"; ctx.fillRect(x+w/2-2, y+h/2-20, 4, 40); }
+};
+
+class BaseEnemy {
+    constructor(typeId, x, y) {
+        let t = ENEMY_DB[typeId]; this.typeId = typeId; this.name = t.name; this.x = x; this.y = y; this.active = true; this.tick = 0; this.isHit = 0; this.warn = 0;
+        let m = Math.max(1, GameEngine.currentWorld); this.initStats(typeId, m); this.maxHp = this.hp;
+    }
+    initStats(id, scale) {
+        let s = {
+            "basic": { w:36, h:36, hp: 20+scale*10, sc: 10, c: "#f44" }, "tank": { w:56, h:64, hp: 100+scale*40, sc: 30, c: "#aaa" },
+            "swerve": { w:40, h:30, hp: 40+scale*15, sc: 20, c: "#f80" }, "sniper": { w:44, h:44, hp: 50+scale*20, sc: 35, c: "#0ff" },
+            "kamikaze": { w:24, h:24, hp: 10+scale*5, sc: 15, c: "#f0f" }, "shieldDrone": { w:50, h:50, hp: 150+scale*50, sc: 40, c: "#0f0" },
+            "stealth": { w:40, h:50, hp: 30+scale*10, sc: 25, c: "#0f0" },
+            "boss1": { w:180, h:120, hp: 2000, sc: BOSS_SC[1], c: "#8aa" }, "boss2": { w:220, h:100, hp: 3500, sc: BOSS_SC[2], c: "#a2a" },
+            "boss3": { w:200, h:180, hp: 6000, sc: BOSS_SC[3], c: "#5f0" }, "boss4": { w:250, h:250, hp: 10000, sc: BOSS_SC[4], c: "#0ff" },
+            "boss5": { w:300, h:200, hp: 18000, sc: BOSS_SC[5], c: "#f00" }
+        }[id];
+        this.width = s.w; this.height = s.h; this.hp = s.hp; this.score = s.sc; this.color = s.c;
+        if(id.startsWith("boss")) { this.isBoss = true; this.phase = 1; this.state = "enter"; }
+        if(id==="swerve") this.startX = this.x; if(id==="sniper") this.targetY = Utils.rnd(100, 300);
+    }
+    takeDamage(dmg, bullet) {
+        if(this.typeId==="stealth" && Math.abs(Math.sin(this.tick*0.05)) < 0.3) return; 
+        if(this.isBoss && (this.state==="enter" || this.state==="transition")) return;
+        if (this.affixes && this.affixes.indexOf('shield') >= 0) {
+            if (this.shieldBroken > 0) { this.shieldBroken--; }
+            else if (this.shieldHits >= 6) { this.shieldHits = 0; this.shieldBroken = 120; }
+            else {
+                let fromBehind = bullet && (bullet.y + bullet.height > this.y + this.height * 0.6);
+                if (!fromBehind) { this.shieldHits++; dmg *= 0.25; }
+            }
+        }
+        this.hp -= dmg; this.isHit = 3; VFX.damageText(this.x+this.width/2, this.y, dmg, "normal");
+        if(this.isBoss && this.phase===1 && this.hp < this.maxHp*0.5) {
+            this.phase = 2; this.state = "transition"; this.stateTimer = 100;
+            Utils.shakeScreen(15, 60); VFX.explosion(this.x+this.width/2, this.y+this.height/2, "#fff", 50, 8); Utils.showMsg("PROTOCOL OVERRIDE: PHASE 2!", "#f00");
+        }
+        if(this.hp <= 0) this.die();
+    }
+    die() {
+        this.active = false;
+        if (this.isBoss) {
+            Utils.shakeScreen(30, 150);
+            AudioSys.playBossBoom();
+            let exT = setInterval(() => { VFX.explosion(this.x+Utils.rnd(0,this.width), this.y+Utils.rnd(0,this.height), this.color, 15, 8); }, 150);
+            setTimeout(() => { clearInterval(exT); VFX.explosion(this.x+this.width/2, this.y+this.height/2, "#fff", 200, 20); GameEngine.onBossDefeated(); }, 2000);
+            document.getElementById('boss-ui').style.opacity = 0;
+        } else {
+            Utils.shakeScreen(3, 5); AudioSys.playExplosion();
+            VFX.explosion(this.x+this.width/2, this.y+this.height/2, this.color, 15, 5);
+        }
+        GameEngine.stageScore += this.score; GameEngine.enemiesKilled++; UI.updateHUD();
+        SaveSystem.addKill(this.typeId);
+        GameEngine.onEnemyKilled(this);
+        if (this.affixes && this.affixes.indexOf('split') >= 0) {
+            for (let i = 0; i < 4; i++) {
+                let mini = new BaseEnemy("kamikaze", this.x + Utils.rnd(-12, 12), this.y + Utils.rnd(-8, 8));
+                mini.hp = 6; mini.maxHp = 6; mini.score = 10; mini.width = 16; mini.height = 16; mini.mini = true;
+                GameEngine.enemies.push(mini);
+            }
+        }
+        let dropsNum = this.isBoss ? 20 : (Math.random() < 0.3 ? 1 : 0);
+        for(let i=0; i<dropsNum; i++) GameEngine.drops.push(new Drop(this.x+Utils.rnd(-10,10), this.y, 10));
+        if (!this.isBoss && Math.random() < 0.09) {
+            let types = ['rapid','spread','shield','magnet'];
+            GameEngine.powerups.push(new PowerUp(this.x + Utils.rnd(-5,5), this.y, types[Math.floor(Math.random()*types.length)]));
+        }
+    }
+    update(ctx) {
+        this.tick++; if(this.isHit>0) this.isHit--;
+        if(this.isBoss) { document.getElementById('boss-hp-bar').style.width = Math.max(0, (this.hp/this.maxHp)*100) + "%"; this.updateBossLogic(); } 
+        else { this.updateNormalLogic(); if(this.y > HEIGHT + 100 || this.x < -100 || this.x > WIDTH + 100) this.active = false; }
+        this.draw(ctx);
+    }
+    updateNormalLogic() {
+        let t = this.typeId, ts = GameEngine.timeScale;
+        if(t==="basic") { this.y += (3 + GameEngine.currentWorld*0.5) * ts; } else if(t==="tank") { this.y += 1.2 * ts; }
+        else if(t==="swerve") {
+            this.y += 2 * ts; this.x = this.startX + Math.sin(this.tick*0.04)*120;
+            if(this.tick%70===0 && this.y>0) GameEngine.bullets.push(new Bullet(this.x+this.width/2-7, this.y+this.height, 0, 7, "#f00", 20, true, "circle"));
+        }
+        else if(t==="sniper") {
+            if(this.y < this.targetY) { this.y += 3 * ts; }
+            else if(player && player.hp>0) {
+                this.warn = (this.tick % 120) >= 100 && (this.tick % 120) < 115 ? 1 : 0;
+                let dx = (player.x+player.width/2)-(this.x+this.width/2), dy = (player.y+player.height/2)-(this.y+this.height);
+                if(this.tick%120===115) { let m = Math.hypot(dx,dy); GameEngine.bullets.push(new Bullet(this.x+this.width/2-4, this.y+this.height, (dx/m)*12, (dy/m)*12, this.color, 40, true, "laser")); }
+            }
+        }
+        else if(t==="kamikaze") {
+            this.warn = (this.x < 60 || this.x > WIDTH - 60) ? 1 : 0;
+            this.y += 5 * ts; if(player && this.y<player.y+100) { this.x += (this.x+this.width/2 < player.x+player.width/2) ? 2 : -2; }
+            if(this.tick%3===0) VFX.engineTrail(this.x+this.width/2, this.y, this.color);
+        }
+        else if(t==="shieldDrone") { this.y += 1.5 * ts; this.x += Math.sin(this.tick*0.02)*3; }
+        else if(t==="stealth") { this.y += 2.5 * ts; if(this.tick%100 === 90 && this.y>0) { for(let i=-1; i<=1; i++) GameEngine.bullets.push(new Bullet(this.x+this.width/2, this.y+this.height, i*3, 6, "#0f0", 25, true)); } }
+        if (this.affixes && this.affixes.indexOf('drain') >= 0) {
+            this.absorbTimer = (this.absorbTimer || 0) - 1;
+            if (this.absorbTimer <= 0 && this.hp < this.maxHp) {
+                this.absorbTimer = 50;
+                let cx = this.x + this.width/2, cy = this.y + this.height/2, absorbed = 0;
+                for (let i = GameEngine.bullets.length - 1; i >= 0 && absorbed < 3; i--) {
+                    let b = GameEngine.bullets[i];
+                    if (!b.active || b.isEnemy) continue;
+                    if (Utils.dist(b.x + b.width/2, b.y + b.height/2, cx, cy) < 75) {
+                        b.active = false; absorbed++;
+                        this.hp = Math.min(this.maxHp, this.hp + b.damage * 0.4);
+                        VFX.explosion(b.x, b.y, "#f44", 4, 2);
+                        VFX.damageText(cx, cy - 8, "+SHIELD", "heal");
+                    }
+                }
+            }
+        }
+    }
+    updateBossLogic() {
+        if (this.state === "enter") { this.y += 2; if(this.y >= 50) { this.state = "idle"; this.stateTimer = 60; } } 
+        else if (this.state === "transition") { this.stateTimer--; if(this.stateTimer<=0) this.state = "idle"; } 
+        else {
+            let t = this.typeId;
+            if(t==="boss1") {
+                this.x = WIDTH/2 - this.width/2 + Math.sin(this.tick*0.02)*150;
+                if(this.phase===1 && this.tick%50===0) { for(let i=-2;i<=2;i++) GameEngine.bullets.push(new Bullet(this.x+this.width/2, this.y+this.height, i*2, 8, "#f30", 25, true, "circle")); }
+                else if (this.phase===2 && this.tick%8===0) { GameEngine.bullets.push(new Bullet(this.x+30, this.y+this.height, 0, 10, "#f00", 30, true, "laser")); GameEngine.bullets.push(new Bullet(this.x+this.width-30, this.y+this.height, 0, 10, "#f00", 30, true, "laser")); }
+            } else if(t==="boss2") {
+                this.x = WIDTH/2 - this.width/2 + Math.sin(this.tick*0.03)*100;
+                if(this.tick%150===0) { GameEngine.enemies.push(new BaseEnemy("swerve", this.x, this.y+this.height/2)); GameEngine.enemies.push(new BaseEnemy("swerve", this.x+this.width, this.y+this.height/2)); }
+                if(this.phase===2 && this.tick%30===0 && player) {
+                    let tg = {x:player.x+player.width/2, y:player.y+player.height/2};
+                    [{x:this.x+30,y:this.y+this.height-20}, {x:this.x+this.width-30,y:this.y+this.height-20}].forEach(src => { let a = Math.atan2(tg.y-src.y, tg.x-src.x); GameEngine.bullets.push(new Bullet(src.x, src.y, Math.cos(a)*8, Math.sin(a)*8, "#f0f", 35, true)); });
+                }
+            } else if(t==="boss3") {
+                this.x = WIDTH/2 - this.width/2; this.y = 20 + Math.sin(this.tick*0.05)*10;
+                if(this.tick%(this.phase===1?70:40)===0) { GameEngine.enemies.push(new BaseEnemy("kamikaze", this.x+Utils.rnd(20,this.width-20), this.y+this.height-20)); }
+                if(this.phase===2 && this.tick%120===0) { for(let i=0;i<=6;i++) { let a=(Math.PI*0.2)+(i*(Math.PI*0.6)/6); GameEngine.bullets.push(new Bullet(this.x+this.width/2, this.y+this.height, Math.cos(a)*6, Math.sin(a)*6, "#0f0", 45, true, "circle")); } }
+            } else if(t==="boss4") {
+                this.x = WIDTH/2 - this.width/2 + Math.sin(this.tick*0.01)*80;
+                if(this.tick%(this.phase===1?15:8)===0) {
+                    let a1 = this.tick*0.1; let a2 = a1+Math.PI; let cx=this.x+this.width/2, cy=this.y+this.height/2;
+                    GameEngine.bullets.push(new Bullet(cx, cy, Math.cos(a1)*6, Math.sin(a1)*6+2, "#0ff", 40, true, "circle")); GameEngine.bullets.push(new Bullet(cx, cy, Math.cos(a2)*6, Math.sin(a2)*6+2, "#0ff", 40, true, "circle"));
+                    if(this.phase===2) { GameEngine.bullets.push(new Bullet(cx, cy, Math.cos(a1+Math.PI/2)*6, Math.sin(a1+Math.PI/2)*6+2, "#fff", 40, true, "circle")); GameEngine.bullets.push(new Bullet(cx, cy, Math.cos(a2+Math.PI/2)*6, Math.sin(a2+Math.PI/2)*6+2, "#fff", 40, true, "circle")); }
+                }
+            } else if(t==="boss5") {
+                this.x = WIDTH/2 - this.width/2 + Math.sin(this.tick*0.03)*(WIDTH/2 - this.width/2);
+                if(this.tick%25===0) { for(let i=-1;i<=1;i++) GameEngine.bullets.push(new Bullet(this.x+this.width/2, this.y+this.height, i*4, 7, "#f00", 50, true, "laser")); }
+                if(this.phase===2) {
+                    if(this.tick%200===0) { GameEngine.enemies.push(new BaseEnemy("tank", 50, -50)); GameEngine.enemies.push(new BaseEnemy("sniper", WIDTH-94, -50)); }
+                    if(this.tick%40===0 && player) { let dx=(player.x+player.width/2)-(this.x+this.width/2), dy=(player.y+player.height/2)-(this.y+this.height); let mag=Math.hypot(dx,dy); GameEngine.bullets.push(new Bullet(this.x+this.width/2, this.y+this.height, (dx/mag)*9, (dy/mag)*9, "#fff", 80, true, "circle")); }
+                }
+            }
+        }
+    }
+    draw(ctx) {
+        ctx.save();
+        if(this.isBoss && (this.state==="transition" || (this.phase===2 && this.tick%10<5))) { ctx.translate(Utils.rnd(-3,3), Utils.rnd(-3,3)); ctx.shadowBlur = 30; ctx.shadowColor = "#f00"; }
+        if (this.affixes && this.affixes.length > 0 && !this.isBoss) {
+            let cx = this.x + this.width/2, cy = this.y + this.height/2, r = Math.max(this.width, this.height) * 0.75 + 6;
+            this.affixes.forEach((a, i) => {
+                let col = { shield: "#ffd700", drain: "#ff4488", split: "#aa66ff" }[a];
+                ctx.strokeStyle = col; ctx.globalAlpha = 0.5 + Math.sin(frameCount*0.08 + i*2) * 0.25;
+                ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, r + i*6, 0, Math.PI*2); ctx.stroke();
+            });
+            ctx.globalAlpha = 1;
+            if (this.affixes.indexOf('shield') >= 0) {
+                let s = this.shieldBroken > 0 ? "rgba(255,200,0,0.15)" : "rgba(255,215,0,0.35)";
+                ctx.fillStyle = s; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+            }
+        }
+        let capId = this.typeId.charAt(0).toUpperCase() + this.typeId.slice(1);
+        if (EnemyRenderer[`draw${capId}`]) { EnemyRenderer[`draw${capId}`](ctx, this.x, this.y, this.width, this.height, this.isHit, this.color, this.tick); }
+        if(!this.isBoss && this.hp < this.maxHp) { ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(this.x, this.y-8, this.width, 4); ctx.fillStyle = "#f33"; ctx.fillRect(this.x, this.y-8, this.width*(Math.max(0,this.hp)/this.maxHp), 4); }
+        if(this.warn > 0 && frameCount % 20 < 10) {
+            let wx, wy;
+            if(this.typeId === 'kamikaze') { wx = this.x < WIDTH/2 ? 16 : WIDTH - 16; wy = Math.max(30, Math.min(this.y, HEIGHT - 30)); }
+            else { wx = Math.max(16, Math.min(this.x + this.width/2, WIDTH - 16)); wy = Math.max(36, this.y); }
+            ctx.fillStyle = "#ff0000"; ctx.shadowBlur = 18; ctx.shadowColor = "#ff0000";
+            ctx.font = "bold 30px Courier New"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillText("!", wx, wy);
+            ctx.shadowBlur = 0;
+        }
+        ctx.restore();
+    }
+}
+
+const STATE = { MENU: 0, PLAYING: 1, STAGE_CLEAR: 2, GAMEOVER: 3, VICTORY: 4 };
+
+const GameEngine = {
+    state: STATE.MENU, currentWorld: 1, currentStage: 1, currentConfig: null,
+    mode: 'story', endlessWave: 0, dmgScale: 1,
+    wave: 1, waveTimer: 0, bossSpawned: false, bossActive: false,
+    stageScore: 0, enemiesKilled: 0, damageTaken: 0, startTime: 0,
+    bullets: [], enemies: [], drops: [], powerups: [],
+    combo: 0, comboMax: 0,
+    paused: false, pauseHeld: false, qHeld: false, eHeld: false, fHeld: false, muteHeld: false,
+    slowTimer: 0, timeScale: 1, cinematic: 0, whiteFlash: 0, tutorial: null,
+    buffs: [], ability: { q: 0, e: 0, shift: 0 }, lastWarn: 0,
+    overcharge: 0, grazeCount: 0, pendingEvolution: null, lastDamageAt: 0,
+    meteors: [], meteorTimer: 0, emStorm: 0, emStormTimer: 0,
+
+    getMaxHpBase() {
+        let v = SaveSystem.data.upgrades.maxHp.val;
+        if (SaveSystem.hasChip('overdrive')) v *= 0.7;
+        if (SaveSystem.hasChip('armor')) v *= 1.2;
+        if (SaveSystem.hasChip('hull')) v *= 1.1;
+        if (SaveSystem.getEvolution(2) === 'magnetic') v *= 1.3;
+        return Math.max(50, Math.round(v));
+    },
+    getSpeedBase() {
+        let v = SaveSystem.data.upgrades.speed.val;
+        if (SaveSystem.hasChip('overdrive')) v *= 1.25;
+        if (SaveSystem.getEvolution(3) === 'kinetic') v *= 1.1;
+        if (SaveSystem.hasEvolution('engine')) v *= 1.3;
+        return v;
+    },
+    getFireRateMult() {
+        let m = 1;
+        if (SaveSystem.hasChip('tempest')) m *= 0.9;
+        if (SaveSystem.getEvolution(3) === 'kinetic') m *= 0.88;
+        if (SaveSystem.hasEvolution('engine')) m *= 0.85;
+        return m;
+    },
+    getDmgMult(type) {
+        let m = 1;
+        if (SaveSystem.hasChip('overdrive')) m *= 1.25;
+        if (SaveSystem.hasChip('crit')) m *= 1.15;
+        if (SaveSystem.getEvolution(2) === 'ion') m *= 1.15;
+        if (SaveSystem.hasEvolution('overlord')) m *= 1.3;
+        if (type && type.startsWith('boss') && SaveSystem.hasEvolution('annihilator')) m *= 1.15;
+        return m;
+    },
+    getIncomingMult() {
+        let m = 1;
+        if (SaveSystem.hasChip('hull')) m *= 0.95;
+        return m;
+    },
+    rollCrit() { return SaveSystem.hasChip('crit') && Math.random() < 0.12; },
+    focusMode() { return this.state === STATE.PLAYING && player && Input.isShift(); },
+
+    initLevel(world, stage, mode) {
+        this.mode = mode === 'endless' ? 'endless' : 'story';
+        this.currentWorld = world; this.currentStage = stage;
+        this.endlessWave = this.mode === 'endless' ? 1 : 0;
+        this.dmgScale = 1;
+        if (this.mode === 'endless') {
+            this.currentConfig = { world: 5, stage: 6, id: '5-6', title: '无尽深渊', diffStr: '?????', bgTheme: 5,
+                scoreThresholds: {}, targetWave: Infinity, spawnInterval: 55, enemyPool: [], bossId: null };
+        } else {
+            this.currentConfig = getStageConfig(world, stage);
+        }
+        this.wave = 1; this.waveTimer = 0; this.bossSpawned = false; this.bossActive = false;
+        this.stageScore = 0; this.enemiesKilled = 0; this.damageTaken = 0; this.startTime = Date.now();
+        this.combo = 0; this.comboMax = 0; this.buffs = []; this.slowTimer = 0; this.timeScale = 1;
+        this.cinematic = 0; this.whiteFlash = 0;
+        this.overcharge = 0; this.grazeCount = 0; this.pendingEvolution = null; this.lastDamageAt = 0;
+        this.meteors = []; this.meteorTimer = Utils.rnd(120, 240); this.emStorm = 0; this.emStormTimer = 900;
+        this.tutorial = (this.mode === 'story' && world === 1 && stage === 1) ? { step: 0, frames: 0, done: false } : null;
+        mapMgr.setTheme(this.currentConfig.bgTheme);
+
+        // 关键修复：完全初始化全局数组与玩家
+        this.bullets = []; this.enemies = []; this.drops = []; this.powerups = [];
+        particles = []; floatingTexts = [];
+        player = new Player();
+        if (SaveSystem.getEvolution(2) === 'magnetic') { player.shieldTimer = 120; VFX.explosion(player.x + player.width/2, player.y + player.height/2, "#0ff", 25, 5); }
+
+        wingmen = [];
+        for(let i=1; i<=SaveSystem.data.upgrades.wingmanCount.val; i++) wingmen.push(new Wingman(i));
+
+        let bossUiEl = document.getElementById('boss-ui');
+        bossUiEl.style.display = "none";
+        bossUiEl.style.opacity = 0;
+        document.getElementById('level-display-text').innerText = this.mode === 'endless' ? `深渊 波次 ${this.endlessWave}` : `WORLD ${world}-${stage}`;
+        AudioSys.startBattleMusic();
+        UI.updateHUD();
+        Utils.showMsg(`DEPLOYING: ${this.currentConfig.title}`, varCSS('--primary'));
+        this.changeState(STATE.PLAYING);
+    },
+
+    changeState(newState) {
+        this.state = newState;
+        document.getElementById('game-wrapper').classList.toggle('touch-active', newState === STATE.PLAYING);
+        document.getElementById('game-wrapper').classList.remove('touch-paused');
+        Input.clearTouch();
+        if(newState === STATE.PLAYING) {
+            UI.hideAll();
+            AudioSys.stopMusic();
+            if (this.bossActive) { AudioSys.startBossMusic(); }
+            else { AudioSys.startBattleMusic(); }
+        } else if(newState === STATE.GAMEOVER) {
+            this.bossActive = false;
+            if (this.mode === 'endless') {
+                if (this.endlessWave > (SaveSystem.data.maxEndlessWave || 0)) { SaveSystem.data.maxEndlessWave = this.endlessWave; }
+                let waveCoins = Math.min(2000, this.endlessWave * 25);
+                SaveSystem.addCoins(waveCoins);
+                document.getElementById('go-wave-line').style.display = "block";
+                document.getElementById('go-waves').innerText = this.endlessWave;
+                SaveSystem.addEndlessRecord(this.endlessWave, this.stageScore);
+                UI.renderLeaderboard();
+                this.checkAchievements();
+            } else {
+                document.getElementById('go-wave-line').style.display = "none";
+                document.getElementById('go-leaderboard').style.display = "none";
+            }
+            document.getElementById('go-coins').innerText = SaveSystem.data.coins;
+            document.getElementById('go-kills').innerText = this.enemiesKilled;
+            document.getElementById('go-combo').innerText = this.comboMax;
+            document.getElementById('go-graze').innerText = this.grazeCount;
+            document.getElementById('go-score').innerText = this.stageScore.toLocaleString();
+            AudioSys.stopMusic();
+            UI.showMenu('game-over');
+        } else if (newState === STATE.VICTORY) {
+            AudioSys.stopMusic();
+            UI.showMenu('victory-screen');
+        } else if (newState === STATE.MENU) {
+            AudioSys.stopMusic();
+        }
+    },
+
+    hasBuff(type) { return this.buffs.some(b => b.type === type); },
+
+    applyBuff(type) {
+        if (type === 'shield') {
+            if (player) {
+                player.hp = Math.min(player.maxHp, player.hp + 40);
+                VFX.damageText(player.x + player.width/2, player.y - 20, "+40 HP", "heal");
+                VFX.explosion(player.x + player.width/2, player.y + player.height/2, "#0f0", 12, 4);
+            }
+            AudioSys.playShield();
+            UI.updateHUD();
+            return;
+        }
+        let meta = POWERUP_DB[type];
+        let ex = this.buffs.find(b => b.type === type);
+        if (ex) ex.timer = meta.dur;
+        else this.buffs.push({ type: type, timer: meta.dur, dur: meta.dur });
+        AudioSys.playPowerup();
+        if (player) VFX.damageText(player.x + player.width/2, player.y - 30, meta.name, "heal");
+    },
+
+    updateBuffs() {
+        for (let i = this.buffs.length - 1; i >= 0; i--) {
+            this.buffs[i].timer--;
+            if (this.buffs[i].timer <= 0) this.buffs.splice(i, 1);
+        }
+        UI.updateBuffs();
+    },
+
+    coinMult() { return this.combo >= 100 ? 2 : (this.combo >= 50 ? 1.5 : 1); },
+    scoreMult() { return 1 + Math.min(1.5, this.combo * 0.01) + (SaveSystem.getEvolution(2) === 'ion' ? 0.25 : 0); },
+
+    tryAbility(k) {
+        if (this.state !== STATE.PLAYING) return;
+        const cost = { q: 100, e: 70, shift: 50 };
+        if (this.ability[k] < cost[k]) { AudioSys.playClick(); Utils.showMsg('能量不足!', '#888'); return; }
+        this.ability[k] -= cost[k];
+        if (k === 'q') {
+            AudioSys.playBomb(); this.whiteFlash = 1;
+            Utils.shakeScreen(22, 45);
+            [...this.enemies].forEach(en => { if (en.active) en.takeDamage(999999); });
+            this.bullets = this.bullets.filter(b => !b.isEnemy);
+            Utils.showMsg('EXTERMINATION!', '#0ff');
+        } else {
+            if (!player) return;
+            player.shieldTimer = 180;
+            AudioSys.playShield();
+            Utils.showMsg('ABSOLUTE DEFENSE', '#0ff');
+            VFX.explosion(player.x + player.width/2, player.y + player.height/2, "#0ff", 30, 6);
+        }
+        UI.updateHUD();
+    },
+
+    tryShockwave() {
+        if (this.state !== STATE.PLAYING || this.overcharge < 100) return;
+        this.overcharge = 0;
+        SaveSystem.addStat('shockwaves');
+        this.checkAchievements();
+        AudioSys.playBomb(); this.whiteFlash = 0.8;
+        Utils.shakeScreen(18, 40);
+        this.bullets = this.bullets.filter(b => !b.isEnemy);
+        let dmg = (250 + this.currentWorld * 50) * (SaveSystem.hasEvolution('conductor') ? 1.5 : 1);
+        this.enemies.forEach(en => { if (en.active) en.takeDamage(dmg); });
+        VFX.explosion(player.x + player.width/2, player.y + player.height/2, "#0ff", 80, 12);
+        Utils.showMsg('OVERCHARGE BURST!', '#0ff');
+        UI.updateHUD();
+    },
+
+    onCoinPickup(v) {
+        SaveSystem.addCoins(v);
+        SaveSystem.addStat('coinsEarned', v);
+        if (SaveSystem.getStat('coinsEarned') >= 100000) this.checkAchievements();
+        if (SaveSystem.hasChip('magnet')) this.overcharge = Math.min(100, this.overcharge + 2);
+        if (SaveSystem.hasChip('recycle') && Math.random() < 0.08) {
+            this.drops.push({ x: player.x, y: player.y, vx: 0, vy: -2, value: 10 });
+        }
+        UI.updateHUD();
+    },
+
+    rollAffixes(world) {
+        if (this.mode === 'endless') {
+            if (Math.random() > Math.min(0.30, 0.12 + (this.endlessWave || 1) * 0.004)) return null;
+        } else {
+            let chance = world <= 2 ? 0 : (world === 3 ? 0.10 : (world === 4 ? 0.13 : 0.16));
+            if (Math.random() > chance) return null;
+        }
+        let pool = ['shield', 'split', 'drain'];
+        let count = (world >= 4 && Math.random() < 0.3) ? 2 : 1;
+        let affixes = [], used = {};
+        for (let i = 0; i < count; i++) {
+            let idx;
+            do { idx = Math.floor(Math.random() * pool.length); } while (used[pool[idx]]);
+            used[pool[idx]] = true;
+            affixes.push(pool[idx]);
+        }
+        return affixes;
+    },
+
+    grantElite(e, affixes) {
+        if (!e || !affixes || !affixes.length) return;
+        e.elite = true; e.affixes = affixes.slice();
+        e.hp = Math.round(e.hp * 1.8); e.maxHp = e.hp;
+        e.score = Math.round(e.score * 2.5);
+        e.shieldHits = 0; e.shieldBroken = 0; e.absorbTimer = 0;
+    },
+
+    spawnMeteor() {
+        let fromLeft = Math.random() < 0.5;
+        this.meteors.push({
+            x: fromLeft ? -50 : WIDTH + 50,
+            y: Utils.rnd(80, 320),
+            vx: (fromLeft ? 1 : -1) * Utils.rnd(1.2, 2.4),
+            vy: Utils.rnd(1.2, 2),
+            size: Utils.rnd(45, 75),
+            hp: 90 + this.currentWorld * 25,
+            rot: Utils.rnd(0, Math.PI * 2),
+            vr: Utils.rnd(-0.03, 0.03),
+            active: true
+        });
+    },
+
+    updateMeteors(ctx) {
+        for (let i = this.meteors.length - 1; i >= 0; i--) {
+            let m = this.meteors[i];
+            if (!m.active) { this.meteors.splice(i, 1); continue; }
+            m.x += m.vx; m.y += m.vy; m.rot += m.vr;
+            if (m.y > HEIGHT + 80 || m.x < -120 || m.x > WIDTH + 120) { this.meteors.splice(i, 1); continue; }
+            for (let b of this.bullets) {
+                if (!b.active) continue;
+                let bx = b.x + b.width/2, by = b.y + b.height/2;
+                if (Utils.dist(bx, by, m.x, m.y) < m.size/2 + 12) {
+                    if (b.isEnemy) { m.hp -= b.damage * 0.5; b.active = false; }
+                    else { m.hp -= b.damage; b.active = false; VFX.explosion(bx, by, "#888", 4, 2); }
+                }
+            }
+            if (player && player.hp > 0 && Utils.dist(player.x + player.width/2, player.y + player.height/2, m.x, m.y) < m.size/2 + 12) {
+                player.takeDamage(30);
+                m.active = false;
+                VFX.explosion(m.x, m.y, "#888", 25, 8);
+            }
+            if (m.hp <= 0) {
+                m.active = false;
+                Utils.shakeScreen(8, 15);
+                VFX.explosion(m.x, m.y, "#aaa", 30, 10);
+                for (let f = 0; f < 3; f++) {
+                    this.meteors.push({
+                        x: m.x + Utils.rnd(-15, 15), y: m.y + Utils.rnd(-15, 15),
+                        vx: Utils.rnd(-1.5, 1.5), vy: Utils.rnd(1.5, 3),
+                        size: Utils.rnd(16, 26), hp: 99999, rot: 0, vr: Utils.rnd(-0.05, 0.05), active: true, fragment: true
+                    });
+                }
+            }
+        }
+        if (this.currentWorld === 3 && this.state === STATE.PLAYING) {
+            this.meteorTimer--;
+            if (this.meteorTimer <= 0) { this.meteorTimer = Utils.rnd(300, 480); this.spawnMeteor(); }
+        }
+    },
+
+    drawMeteors(ctx) {
+        for (let m of this.meteors) {
+            ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.rot);
+            ctx.fillStyle = m.fragment ? "#777" : "#555";
+            ctx.shadowBlur = m.fragment ? 0 : 15; ctx.shadowColor = "#ff8800";
+            ctx.beginPath();
+            ctx.moveTo(-m.size/2, -m.size/3); ctx.lineTo(m.size/3, -m.size/2);
+            ctx.lineTo(m.size/2, m.size/3); ctx.lineTo(-m.size/3, m.size/2);
+            ctx.closePath(); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    },
+
+    updateHazards() {
+        if (this.currentWorld === 4 && this.state === STATE.PLAYING) {
+            this.emStormTimer--;
+            if (this.emStormTimer <= 0) {
+                this.emStormTimer = 1200;
+                this.emStorm = 360;
+                Utils.showMsg('电磁风暴!', '#00ff66');
+                AudioSys.playWarning();
+            }
+        }
+        if (this.emStorm > 0) this.emStorm--;
+        let gl = document.getElementById('glitch-overlay');
+        if (this.emStorm > 0) gl.classList.add('on'); else gl.classList.remove('on');
+    },
+
+    togglePause() {
+        if (this.state !== STATE.PLAYING) return;
+        this.paused = !this.paused;
+        document.getElementById('game-wrapper').classList.toggle('touch-paused', this.paused);
+        if (this.paused) Input.clearTouch();
+        if (this.paused) {
+            UI.showPause();
+            AudioSys.pauseMusic();
+        } else {
+            UI.hidePause();
+            AudioSys.resumeMusic();
+        }
+    },
+
+    updateTutorial() {
+        let t = this.tutorial;
+        if (!t || t.done) return;
+        t.frames++;
+        let hintEl = document.getElementById('tutorial-hint');
+        let titleEl = document.getElementById('tut-title');
+        let subEl = document.getElementById('tut-sub');
+        if (t.step === 0) {
+            titleEl.innerText = '机动测试 (STEP 1/2)';
+            subEl.innerText = '按 [W A S D] 或方向键移动战机';
+            if (Input.isUp() || Input.isDown() || Input.isLeft() || Input.isRight()) { t.step = 1; t.frames = 0; AudioSys.playClick(); }
+            if (t.frames > 900) { t.done = true; }
+        } else if (t.step === 1) {
+            titleEl.innerText = '校准武器 (STEP 2/2)';
+            subEl.innerText = '按 [空格] 或 [K] 发射主炮';
+            if (Input.isFire()) { t.done = true; }
+            if (t.frames > 900) { t.done = true; }
+        }
+        hintEl.style.opacity = t.done ? 0 : 1;
+        if (t.done) {
+            this.tutorial = null;
+            Utils.showMsg('ENEMY WAVES INCOMING', '#0ff');
+        }
+    },
+
+    startCinematic(bossName) {
+        this.cinematic = 120;
+        document.getElementById('cinematic-quote').innerText = `⚠ ${bossName} ⚠`;
+        AudioSys.playBossBoom();
+    },
+
+    handleSpawning() {
+        if(this.bossSpawned || this.state !== STATE.PLAYING) return;
+        if(this.tutorial && !this.tutorial.done) return;
+        if (this.mode === 'endless') { this.endlessSpawning(); return; }
+        if (this.currentConfig.bossId) {
+            this.bossSpawned = true;
+            this.bossActive = true;
+            this.enemies.push(new BaseEnemy(this.currentConfig.bossId, 0, 0));
+            AudioSys.startBossMusic();
+            let bossUiEl = document.getElementById('boss-ui');
+            bossUiEl.style.display = "block";
+            bossUiEl.style.opacity = 1;
+            document.getElementById('boss-name').innerText = ENEMY_DB[this.currentConfig.bossId].name;
+            this.startCinematic(ENEMY_DB[this.currentConfig.bossId].name);
+            return;
+        }
+        if (this.wave > this.currentConfig.targetWave) {
+            if (this.enemies.length === 0) { this.onStageCleared(); }
+            return;
+        }
+        this.waveTimer++;
+        if (this.waveTimer >= this.currentConfig.spawnInterval) {
+            this.waveTimer = 0; let pool = this.currentConfig.enemyPool; let type = pool[Math.floor(Math.random() * pool.length)];
+            let e = new BaseEnemy(type, Utils.rnd(50, WIDTH-50), -60);
+            this.grantElite(e, this.rollAffixes(this.currentWorld));
+            this.enemies.push(e);
+            if (Math.random() < 0.16) { this.wave++; }
+        }
+    },
+
+    endlessSpawning() {
+        this.waveTimer++;
+        if (this.waveTimer >= this.currentConfig.spawnInterval) {
+            this.waveTimer = 0;
+            this.dmgScale = Math.min(3.0, 1 + (this.endlessWave - 1) * 0.06);
+            let batch = Math.min(2 + Math.floor(this.endlessWave / 5), 6);
+            let pool = ['basic','swerve','kamikaze','tank','sniper','stealth'];
+            if (this.endlessWave >= 15) pool.push('shieldDrone');
+            if (this.endlessWave >= 25) pool.push('shieldDrone');
+            for (let i = 0; i < batch; i++) {
+                let type = pool[Math.floor(Math.random() * pool.length)];
+                let e = new BaseEnemy(type, Utils.rnd(50, WIDTH-50), -60);
+                let mult = Math.min(8, 1 + (this.endlessWave - 1) * 0.15);
+                e.hp = Math.round(e.hp * mult); e.maxHp = e.hp;
+                this.grantElite(e, this.rollAffixes(5));
+                this.enemies.push(e);
+            }
+            if (this.endlessWave % 10 === 0) {
+                let bossId = 'boss' + (1 + Math.floor(Math.random() * 5));
+                let boss = new BaseEnemy(bossId, 0, 0);
+                boss.hp = Math.round(boss.hp * Math.min(12, 1.5 + (this.endlessWave - 10) * 0.1));
+                boss.maxHp = boss.hp;
+                this.enemies.push(boss);
+                this.bossActive = true;
+                AudioSys.startBossMusic();
+                this.startCinematic(ENEMY_DB[bossId].name + ' (精英)');
+                Utils.showMsg('ELITE BOSS INCOMING', '#f00');
+            }
+            this.endlessWave++;
+            UI.updateHUD();
+        }
+    },
+
+    onBossDefeated() {
+        this.bossActive = false;
+        if (this.mode === 'endless') {
+            AudioSys.startBattleMusic();
+            let bossCoins = Math.min(3000, 500 + this.endlessWave * 20);
+            SaveSystem.addCoins(bossCoins);
+            SaveSystem.addStat('coinsEarned', bossCoins);
+            if (player) player.hp = Math.min(player.maxHp, player.hp + 60);
+            Utils.showMsg(`霸主击破! 悬赏 +$${bossCoins} · 机体修复`, '#ffd700');
+            UI.updateHUD();
+            return;
+        }
+        setTimeout(() => { this.onStageCleared(); }, 2000);
+    },
+
+    onStageCleared() {
+        if(this.state !== STATE.PLAYING) return;
+        this.changeState(STATE.STAGE_CLEAR);
+        let timeElapsed = (Date.now() - this.startTime) / 1000;
+        let baseScore = Math.floor(this.stageScore * this.scoreMult());
+        let expectedTime = 120 + (this.currentConfig.bossId ? 60 : 0);
+        let timeBonus = Math.min(3000, Math.max(0, Math.floor((expectedTime - timeElapsed) * 30)));
+        let hpRatio = player.hp / player.maxHp;
+        let hpBonus = Math.floor(hpRatio * 1500) + (this.damageTaken === 0 ? 750 : 0);
+        let totalScore = baseScore + timeBonus + hpBonus;
+        let thresholds = this.currentConfig.scoreThresholds;
+        let rank = 'D'; let bonusCoins = 0;
+        if(totalScore >= thresholds.S) { rank = 'S'; bonusCoins = Math.round((1000 + this.currentWorld*200) * this.coinMult()); }
+        else if(totalScore >= thresholds.A) { rank = 'A'; bonusCoins = 500 + this.currentWorld*100; }
+        else if(totalScore >= thresholds.B) { rank = 'B'; bonusCoins = 200 + this.currentWorld*50; }
+        else if(totalScore >= thresholds.C) { rank = 'C'; bonusCoins = 50 + this.currentWorld*20; }
+        SaveSystem.recordClear(this.currentWorld, this.currentStage, totalScore, rank, this.damageTaken === 0);
+        SaveSystem.addCoins(bonusCoins);
+        if (this.currentWorld === 5 && this.currentStage === 5) {
+            UI.showToast('无尽深渊已解锁', '新的试炼在等待着你…… (ENDLESS)');
+        }
+        this.pendingEvolution = (this.mode === 'story' && this.currentConfig.bossId && this.currentWorld >= 2 && !SaveSystem.getEvolution(this.currentWorld)) ? this.currentWorld : null;
+        document.getElementById('sc-rank').innerText = rank; document.getElementById('sc-rank').className = `rank-display rank-${rank}`;
+        document.getElementById('sc-base-score').innerText = baseScore; document.getElementById('sc-time-bonus').innerText = timeBonus;
+        document.getElementById('sc-hp-bonus').innerText = hpBonus; document.getElementById('sc-total-score').innerText = totalScore;
+        document.getElementById('sc-bonus-coins').innerText = bonusCoins;
+        UI.showMenu('stage-clear-screen');
+        this.checkAchievements();
+    },
+
+    onEnemyKilled(e) {
+        this.combo++;
+        this.comboMax = Math.max(this.comboMax, this.combo);
+        this.ability.q = Math.min(100, this.ability.q + 12);
+        this.ability.e = Math.min(100, this.ability.e + 12);
+        this.ability.shift = Math.min(100, this.ability.shift + 12);
+        if (e.elite) SaveSystem.addStat('eliteKills');
+        if (e.mini) SaveSystem.addStat('minis');
+        if (e.isBoss) {
+            SaveSystem.addStat('bossKills');
+            if (!SaveSystem.data.stats.bossTypes) SaveSystem.data.stats.bossTypes = {};
+            SaveSystem.data.stats.bossTypes[e.typeId] = 1;
+        }
+        if (this.combo === 50 || this.combo === 100 || this.combo === 150 || this.combo === 300) {
+            AudioSys.playAchievement();
+            VFX.damageText(e.x, e.y, `COMBO ${this.combo}!`, "crit");
+            let cde = document.getElementById('combo-display');
+            if (cde) { cde.classList.remove('pop'); void cde.offsetWidth; cde.classList.add('pop'); }
+        }
+        this.checkAchievements();
+    },
+
+    checkAchievements() {
+        let unlocked = false;
+        ACHIEVEMENTS.forEach(a => {
+            if (SaveSystem.hasAchievement(a.id)) return;
+            let ok = false;
+            switch (a.id) {
+                case 'first_boss':
+                    ok = Object.keys(SaveSystem.data.stageRecords).some(k => k.endsWith('-5'));
+                    break;
+                case 'flawless_stage':
+                    ok = Object.values(SaveSystem.data.stageRecords).some(r => r && r.noHit);
+                    break;
+                case 'flawless_1_5': {
+                    let r = SaveSystem.data.stageRecords['1-5'];
+                    ok = !!(r && r.noHit);
+                    break;
+                }
+                case 'kamikaze_100': ok = (SaveSystem.data.kills.kamikaze || 0) >= 100; break;
+                case 'kamikaze_1000': ok = (SaveSystem.data.kills.kamikaze || 0) >= 1000; break;
+                case 's_rank_5': ok = SaveSystem.getSRankCount() >= 5; break;
+                case 'combo_50': ok = this.comboMax >= 50; break;
+                case 'combo_150': ok = this.comboMax >= 150; break;
+                case 'endless_10': ok = (SaveSystem.data.maxEndlessWave || 0) >= 10; break;
+                case 'endless_30': ok = (SaveSystem.data.maxEndlessWave || 0) >= 30; break;
+                case 'all_cleared': ok = SaveSystem.allStagesCleared(); break;
+                case 'chips_2': ok = SaveSystem.data.equippedChips.length >= 2; break;
+                case 'chip_collector': ok = Object.keys(CHIP_DB).every(cid => SaveSystem.data.chips.owned.indexOf(cid) >= 0); break;
+                case 'evo_all': ok = Object.keys(SaveSystem.data.evolutions).length >= 4; break;
+                case 'mastery_3': ok = ['basic','tank','swerve','sniper','kamikaze','shieldDrone','stealth'].some(t => SaveSystem.getMasteryLevel(t) >= 3); break;
+                case 'graze_500': ok = SaveSystem.getStat('grazes') >= 500; break;
+                case 'shock_30': ok = SaveSystem.getStat('shockwaves') >= 30; break;
+                case 'elite_50': ok = SaveSystem.getStat('eliteKills') >= 50; break;
+                case 'boss_hunter': ok = Object.keys(SaveSystem.data.stats.bossTypes || {}).length >= 5; break;
+                case 'coins_100k': ok = SaveSystem.getStat('coinsEarned') >= 100000; break;
+                case 'combo_300': ok = this.comboMax >= 300; break;
+                case 'endless_60': ok = (SaveSystem.data.maxEndlessWave || 0) >= 60; break;
+                case 's_rank_all': ok = Object.keys(SaveSystem.data.stageRecords).filter(k => SaveSystem.data.stageRecords[k].rank === 'S').length >= 25; break;
+            }
+            if (ok) {
+                SaveSystem.data.achievements[a.id] = true;
+                SaveSystem.addCoins(a.reward);
+                if (a.skin) {
+                    let s = SaveSystem.data.skins.find(sk => sk.id === a.skin);
+                    if (s) s.owned = true;
+                }
+                UI.showToast(a.name, `成就奖励 +$${a.reward}${a.skin ? ' · 解锁限定涂装' : ''}`);
+                AudioSys.playAchievement();
+                unlocked = true;
+            }
+        });
+        if (unlocked) SaveSystem.save();
+    },
+
+    update() {
+        frameCount++;
+        if (Input.isPause() && !this.pauseHeld) { this.pauseHeld = true; this.togglePause(); }
+        if (!Input.isPause()) this.pauseHeld = false;
+        if (this.paused) return;
+        if (Input.isQ() && !this.qHeld) { this.qHeld = true; this.tryAbility('q'); }
+        if (!Input.isQ()) this.qHeld = false;
+        if (Input.isE() && !this.eHeld) { this.eHeld = true; this.tryAbility('e'); }
+        if (!Input.isE()) this.eHeld = false;
+        if (Input.isF() && !this.fHeld) { this.fHeld = true; this.tryShockwave(); }
+        if (!Input.isF()) this.fHeld = false;
+        if (Input.isMute() && !this.muteHeld) { this.muteHeld = true; AudioSys.ensureInit(); AudioSys.toggleMute(); }
+        if (!Input.isMute()) this.muteHeld = false;
+
+        let abMult = SaveSystem.hasChip('relay') ? 1.25 : 1;
+        if (SaveSystem.hasChip('tempest')) abMult *= 1.1;
+        this.ability.q = Math.min(100, this.ability.q + 0.045 * abMult);
+        this.ability.e = Math.min(100, this.ability.e + 0.045 * abMult);
+        this.ability.shift = Math.min(100, this.ability.shift + 0.045 * abMult);
+        this.overcharge = Math.min(100, this.overcharge + 0.02);
+        if (SaveSystem.hasEvolution('regen') && Date.now() - this.lastDamageAt > 5000 && player && player.hp > 0 && player.hp < player.maxHp) {
+            player.hp = Math.min(player.maxHp, player.hp + 3);
+        }
+        this.updateHazards();
+
+        if (this.slowTimer > 0) { this.slowTimer--; this.timeScale = 0.35; } else { this.timeScale = 1; }
+        if (this.cinematic > 0) this.cinematic--;
+        if (this.tutorial && !this.tutorial.done && this.state === STATE.PLAYING) this.updateTutorial();
+        this.updateBuffs();
+        this.comboMax = Math.max(this.comboMax, this.combo);
+
+        let anyWarn = this.enemies.some(e => e.warn > 0);
+        if (anyWarn && frameCount - this.lastWarn > 28) { this.lastWarn = frameCount; AudioSys.playWarning(); }
+
+        let sx = 0, sy = 0;
+        if(shakeConfig.duration > 0) {
+            sx = Utils.rnd(-shakeConfig.intensity, shakeConfig.intensity); sy = Utils.rnd(-shakeConfig.intensity, shakeConfig.intensity);
+            shakeConfig.duration--; if(shakeConfig.duration <= 0) shakeConfig.intensity = 0;
+        }
+        ctx.save(); ctx.translate(sx, sy);
+        mapMgr.updateAndDraw(ctx);
+
+        // 演出层: 电影黑边 / 红色警报 / 白闪 / 时缓色调
+        let cTop = document.getElementById('cinematic-top'), cBot = document.getElementById('cinematic-bottom');
+        let cQuote = document.getElementById('cinematic-quote'), cAlert = document.getElementById('red-alert');
+        if (this.cinematic > 0) {
+            cTop.style.height = '110px'; cBot.style.height = '110px';
+            cQuote.style.opacity = 1; cAlert.style.opacity = 1; cAlert.classList.add('on');
+        } else {
+            cTop.style.height = '0px'; cBot.style.height = '0px';
+            cQuote.style.opacity = 0; cAlert.style.opacity = 0; cAlert.classList.remove('on');
+        }
+        if (this.whiteFlash > 0) { document.getElementById('white-flash').style.opacity = Math.min(1, this.whiteFlash); this.whiteFlash -= 0.025; }
+        else document.getElementById('white-flash').style.opacity = 0;
+        document.getElementById('speed-tint').style.opacity = this.slowTimer > 0 ? 1 : 0;
+
+        if (this.state !== STATE.PLAYING) {
+            if (player) player.draw(ctx);
+            particles.forEach(p => p.update(ctx));
+            ctx.restore(); return;
+        }
+
+        player.update(ctx);
+        wingmen.forEach(w => w.update(ctx));
+        this.handleSpawning();
+
+        for(let i=this.bullets.length-1; i>=0; i--) { let b = this.bullets[i]; b.update(ctx); if(!b.active) this.bullets.splice(i,1); }
+        for(let i=this.enemies.length-1; i>=0; i--) { let e = this.enemies[i]; e.update(ctx); if(!e.active) this.enemies.splice(i,1); }
+        for(let i=particles.length-1; i>=0; i--) { let p = particles[i]; p.update(ctx); if(p.life <= 0) particles.splice(i,1); }
+        for(let i=floatingTexts.length-1; i>=0; i--) { let f = floatingTexts[i]; f.update(ctx); if(f.life <= 0) floatingTexts.splice(i,1); }
+
+        for(let i=this.drops.length-1; i>=0; i--) {
+            let d = this.drops[i]; d.update(ctx);
+            if(d.y > HEIGHT + 50) { this.drops.splice(i,1); continue; }
+            if(player.hp > 0 && Utils.checkCollision(d, player, 0)) {
+                let v = Math.max(1, Math.round(d.value * this.coinMult()));
+                this.onCoinPickup(v);
+                AudioSys.playCoin();
+                VFX.damageText(d.x, d.y, `+$${v}`, "heal"); VFX.explosion(d.x, d.y, "#ff0", 5, 2);
+                this.drops.splice(i,1);
+            }
+        }
+
+        for(let i=this.powerups.length-1; i>=0; i--) {
+            let pu = this.powerups[i]; pu.update(ctx);
+            if(pu.y > HEIGHT + 50) { this.powerups.splice(i,1); continue; }
+            if(player.hp > 0 && Utils.checkCollision(pu, player, 0)) {
+                this.applyBuff(pu.type);
+                this.powerups.splice(i,1);
+            }
+        }
+
+        this.bullets.forEach(b => {
+            if(!b.active) return;
+            if(!b.isEnemy) {
+                for(let e of this.enemies) {
+                    if(e.active && Utils.checkCollision(b, e, e.isBoss ? 15 : 4)) {
+                        let mult = this.getDmgMult(e.typeId) * (1 + SaveSystem.getMasteryBonus(e.typeId));
+                        e.takeDamage(b.damage * mult, b);
+                        VFX.explosion(b.x, b.y, b.crit ? "#ff00ff" : "#fff", b.crit ? 8 : 4, b.crit ? 3 : 1.5);
+                        if (b.pierce > 1) { b.pierce--; } else { b.active = false; break; }
+                    }
+                }
+            } else {
+                if(player && player.hp > 0) {
+                    let bx = b.x + b.width/2, by = b.y + b.height/2;
+                    let pcx = player.x + player.width/2, pcy = player.y + player.height/2;
+                    let d = Utils.dist(bx, by, pcx, pcy);
+                    if(d < 30 && !b.grazed) {
+                        b.grazed = true;
+                        this.grazeCount++;
+                        SaveSystem.addStat('grazes');
+                        if (SaveSystem.getStat('grazes') === 500) this.checkAchievements();
+                        let bonus = 100 + (SaveSystem.hasChip('relay') ? 60 : 0);
+                        this.stageScore += bonus;
+                        VFX.damageText(pcx, pcy - 16, `GRAZE +${bonus}`, "heal");
+                        this.overcharge = Math.min(100, this.overcharge + 6 * (SaveSystem.hasEvolution('conductor') ? 1.4 : 1));
+                        AudioSys.playCoin();
+                    }
+                    if(d < 11 && player.invul <= 0) {
+                        b.active = false;
+                        player.takeDamage(Math.round(b.damage * this.dmgScale));
+                    }
+                }
+            }
+        });
+
+        this.enemies.forEach(e => {
+            if(e.active && player.invul <= 0 && player.hp > 0 && Utils.checkCollision(e, player, 5)) {
+                e.takeDamage(9999); player.takeDamage(Math.round(40 * this.dmgScale));
+            }
+        });
+
+        this.updateMeteors(ctx);
+        this.drawMeteors(ctx);
+
+        UI.updateHUD();
+        ctx.restore();
+    }
+};
+
+function gameLoop() { GameEngine.update(); requestAnimationFrame(gameLoop); }
+
+const UI = {
+    selectedWorld: 1, selectedStage: 1,
+    updateHUD() {
+        if(player) {
+            let p = player.hp / player.maxHp;
+            document.getElementById('hp-bar').style.width = Math.max(0, p * 100) + "%";
+            if(p > 0.5) document.getElementById('hp-bar').style.background = "linear-gradient(90deg, #00aa00, #00ff00)";
+            else if (p > 0.2) document.getElementById('hp-bar').style.background = "linear-gradient(90deg, #aa8800, #ffff00)";
+            else document.getElementById('hp-bar').style.background = "linear-gradient(90deg, #aa0000, #ff0000)";
+        }
+        document.getElementById('coin-count').innerText = SaveSystem.data.coins.toLocaleString();
+        document.getElementById('score-count').innerText = GameEngine.stageScore.toLocaleString();
+        let cd = document.getElementById('combo-display');
+        if (GameEngine.combo >= 2) {
+            cd.style.opacity = 1;
+            document.getElementById('combo-count').innerText = GameEngine.combo;
+            document.getElementById('combo-mult').innerText = `得分 x${GameEngine.scoreMult().toFixed(2)} · 金币 x${GameEngine.coinMult()}`;
+        } else { cd.style.opacity = 0; }
+        const costs = { q: 100, e: 70, shift: 100 };
+        const abEls = { q: 'ab-q', e: 'ab-e', shift: 'ab-shift' };
+        for (let k in abEls) {
+            let el = document.getElementById(abEls[k]);
+            let chg = k === 'shift' ? GameEngine.overcharge : GameEngine.ability[k];
+            el.querySelector('.ability-fill').style.height = chg + "%";
+            el.querySelector('.ability-label').innerText = Math.floor(chg) + "%";
+            if (chg >= costs[k]) el.classList.add('ready'); else el.classList.remove('ready');
+        }
+        if (GameEngine.mode === 'endless') document.getElementById('level-display-text').innerText = `深渊 波次 ${GameEngine.endlessWave}`;
+    },
+
+    updateBuffs() {
+        let bar = document.getElementById('buff-bar');
+        if (GameEngine.buffs.length === 0) { bar.innerHTML = ""; return; }
+        let html = "";
+        GameEngine.buffs.forEach(b => {
+            let m = POWERUP_DB[b.type];
+            html += `<div class="buff-chip" style="color:${m.color}"><div class="b-name">${m.icon || ''} ${m.name}</div><div class="b-time">${(b.timer/60).toFixed(1)}s</div></div>`;
+        });
+        bar.innerHTML = html;
+    },
+
+    showPause() {
+        let el = document.getElementById('pause-screen');
+        el.classList.remove('hidden'); el.style.opacity = 1; el.style.pointerEvents = "auto";
+        document.getElementById('ps-hp').innerText = player ? `${Math.ceil(player.hp)}/${player.maxHp}` : '-';
+        document.getElementById('ps-dmg').innerText = SaveSystem.data.upgrades.damage.val;
+        document.getElementById('ps-rate').innerText = SaveSystem.data.upgrades.fireRate.val;
+        document.getElementById('ps-speed').innerText = SaveSystem.data.upgrades.speed.val;
+        document.getElementById('ps-weapon').innerText = (WEAPON_DB[SaveSystem.data.weaponModule] || WEAPON_DB.linear).name;
+    },
+    hidePause() {
+        let el = document.getElementById('pause-screen');
+        el.classList.add('hidden'); el.style.opacity = 0; el.style.pointerEvents = "none";
+    },
+
+    _toastTimer: null,
+    showToast(title, desc) {
+        let el = document.getElementById('ach-toast');
+        document.getElementById('ach-toast-title').innerText = `🏆 ${title}`;
+        document.getElementById('ach-toast-desc').innerText = desc;
+        el.style.opacity = 1;
+        if (this._toastTimer) clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => { el.style.opacity = 0; }, 3500);
+    },
+
+    renderAchievements() {
+        let list = document.getElementById('ach-list');
+        let html = "";
+        let doneCount = 0;
+        ACHIEVEMENTS.forEach(a => {
+            let done = SaveSystem.hasAchievement(a.id);
+            if (done) doneCount++;
+            html += `<div class="ach-item ${done ? 'done' : ''}">
+                <div class="ach-ico">${done ? a.icon : '🔒'}</div>
+                <div class="ach-info">
+                    <div class="ach-name">${a.icon} ${a.name} ${done ? '<span style="color:var(--success);">✓</span>' : ''}</div>
+                    <div class="ach-desc">${a.desc}</div>
+                    <div class="ach-reward">奖励: +$${a.reward.toLocaleString()}${a.skin ? ' · 限定涂装' : ''}</div>
+                </div>
+            </div>`;
+        });
+        list.innerHTML = `<div style="text-align:center; margin-bottom:14px; color:#aaa; font-size:13px;">已解锁 <b style="color:var(--gold);">${doneCount}</b> / ${ACHIEVEMENTS.length} 项成就</div>` + html;
+    },
+
+    renderLeaderboard() {
+        let box = document.getElementById('go-leaderboard');
+        box.style.display = "block";
+        let recs = SaveSystem.data.endlessRecords;
+        if (!recs.length) { document.getElementById('go-records').innerHTML = '<div style="color:#888; text-align:center;">暂无记录</div>'; return; }
+        let html = "";
+        let medals = ['🥇', '🥈', '🥉'];
+        recs.forEach((r, i) => {
+            let isCurrent = i === 0;
+            html += `<div style="display:flex; justify-content:space-between; padding:3px 4px; border-bottom:1px solid rgba(255,255,255,0.06); ${isCurrent ? 'color:var(--gold); text-shadow:0 0 6px rgba(255,215,0,0.5);' : ''}">
+                <span>${medals[i] || (i + 1) + '.'} 第 ${r.wave} 波</span>
+                <span style="color:var(--primary);">${r.score.toLocaleString()} 分</span>
+            </div>`;
+        });
+        document.getElementById('go-records').innerHTML = html;
+    },
+
+    buyWeapon(id) {
+        let w = WEAPON_DB[id];
+        let ws = SaveSystem.data.weapons[id];
+        if (ws && !ws.owned && SaveSystem.data.coins >= w.cost) {
+            SaveSystem.data.coins -= w.cost;
+            ws.owned = true;
+            SaveSystem.data.weaponModule = id;
+            SaveSystem.save();
+            AudioSys.playPowerup();
+            this.renderShop();
+        }
+    },
+    equipWeapon(id) {
+        if (id === 'linear' || (SaveSystem.data.weapons[id] && SaveSystem.data.weapons[id].owned)) {
+            SaveSystem.data.weaponModule = id;
+            SaveSystem.save();
+            AudioSys.playClick();
+            this.renderShop();
+        }
+    },
+    
+    hideAll() {
+        ['main-menu', 'level-select-screen', 'stage-clear-screen', 'game-over', 'shop-screen', 'victory-screen', 'pause-screen', 'achievements-screen'].forEach(id => {
+            let el = document.getElementById(id); el.classList.add('hidden'); el.style.opacity = 0; el.style.pointerEvents = "none";
+        });
+    },
+    
+    showMenu(id) {
+        this.hideAll(); let el = document.getElementById(id);
+        el.classList.remove('hidden'); el.style.opacity = 1; el.style.pointerEvents = "auto";
+        if (id === 'shop-screen') this.renderShop();
+        if (id === 'level-select-screen') this.renderLevelSelect();
+        if (id === 'achievements-screen') this.renderAchievements();
+        if (id === 'main-menu') {
+            let be = document.getElementById('btn-endless');
+            be.disabled = !SaveSystem.data.endlessUnlocked;
+            be.innerHTML = SaveSystem.data.endlessUnlocked ? '<span class="btn-icon">🌌</span>无尽深渊 (ENDLESS)' : '<span class="btn-icon">🌌</span>无尽深渊 🔒 (通关主线解锁)';
+            document.getElementById('ms-coins').innerText = SaveSystem.data.coins.toLocaleString();
+            document.getElementById('ms-sranks').innerText = SaveSystem.getSRankCount();
+            document.getElementById('ms-evos').innerText = Object.keys(SaveSystem.data.evolutions).length;
+            document.getElementById('ms-endless').innerText = SaveSystem.data.maxEndlessWave || 0;
+            AudioSys.startMenuMusic();
+        }
+    },
+
+    renderLevelSelect() {
+        const leftPanel = document.getElementById('ls-world-list'); leftPanel.innerHTML = '';
+        const WORLD_ICO = ['🛰️', '💠', '☄️', '💾', '🕳️'];
+        for (let w = 1; w <= 5; w++) {
+            let isWorldUnlocked = w <= SaveSystem.data.unlockedWorld;
+            let group = document.createElement('div'); group.className = `world-group ${isWorldUnlocked ? '' : 'world-locked'}`;
+            let title = document.createElement('div'); title.className = 'world-title';
+            title.style.color = WORLD_THEMES[w-1].color;
+            title.innerHTML = `<span class="world-ico">${WORLD_ICO[w-1]}</span>${WORLD_THEMES[w-1].name}`;
+            group.appendChild(title);
+            for (let s = 1; s <= 5; s++) {
+                let btn = document.createElement('button');
+                let isStageUnlocked = SaveSystem.isUnlocked(w, s);
+                let record = SaveSystem.data.stageRecords[`${w}-${s}`];
+                btn.className = `stage-btn ${this.selectedWorld === w && this.selectedStage === s ? 'active' : ''}`; btn.disabled = !isStageUnlocked;
+                let rankHtml = record ? `<span class="stage-rank rank-${record.rank}">${record.rank} 级</span>` : `<span style="font-size:12px;">[未涉足]</span>`;
+                let starHtml = record ? `<span class="stage-stars">${'★'.repeat({S:3,A:2,B:1}[record.rank]||1)}</span>` : '';
+                btn.innerHTML = `<span>关卡 ${w}-${s} ${s===5?'💀BOSS':''}</span> ${isStageUnlocked ? rankHtml : '🔒锁定'}` + (isStageUnlocked && starHtml ? ` ${starHtml}` : '');
+                if (isStageUnlocked) { btn.onclick = () => { this.selectedWorld = w; this.selectedStage = s; this.renderLevelSelect(); }; }
+                group.appendChild(btn);
+            }
+            leftPanel.appendChild(group);
+        }
+        this.renderStageDetails();
+    },
+    
+    renderStageDetails() {
+        let config = getStageConfig(this.selectedWorld, this.selectedStage); if (!config) return;
+        document.getElementById('ls-stage-title').innerText = config.title;
+        document.getElementById('ls-stage-diff').innerText = `危险度: ${config.diffStr}`;
+        let record = SaveSystem.data.stageRecords[`${config.world}-${config.stage}`];
+        document.getElementById('ls-high-score').innerText = record ? record.score : 0;
+        document.getElementById('ls-best-rank').innerText = record ? record.rank : "无";
+        document.getElementById('ls-best-rank').className = record ? `rank-${record.rank}` : "";
+        let masteryEl = document.getElementById('ls-mastery');
+        if (masteryEl) {
+            let kills = 0, bestLv = 0;
+            config.enemyPool.forEach(t => {
+                kills += (SaveSystem.data.kills[t] || 0);
+                bestLv = Math.max(bestLv, SaveSystem.getMasteryLevel(t));
+            });
+            let bonus = MASTERY_BONUS[bestLv] || 0;
+            let evo = SaveSystem.getEvolution(config.world);
+            let evoName = evo && EVOLUTION_DB[evo] ? EVOLUTION_DB[evo].name : "未解锁";
+            let pct = Math.min(100, kills / 50 * 100);
+            masteryEl.innerHTML = `<div>精通系统: <span style="color:var(--primary);">+${Math.round(bonus * 100)}% 伤害</span> (本星区累计击杀 ${kills}/50) · 分支进化: <span style="color:var(--gold);">${evoName}</span></div>
+                <div class="mastery-bar"><div class="mastery-bar-fill" style="width:${pct}%"></div></div>`;
+        }
+        document.getElementById('btn-deploy').disabled = !SaveSystem.isUnlocked(config.world, config.stage);
+        
+        let grid = document.getElementById('ls-enemy-grid'); grid.innerHTML = '';
+        let isStageCleared = SaveSystem.isCleared(config.world, config.stage);
+        
+        config.enemyPool.forEach(eid => {
+            let meta = ENEMY_DB[eid]; let card = document.createElement('div'); card.className = `enemy-card ${isStageCleared ? '' : 'locked-card'}`;
+            let canvasHtml = `<canvas id="prev-${eid}" width="80" height="80"></canvas>`;
+            let infoHtml = isStageCleared ? `<div class="e-name">${meta.name}</div><div class="e-stats">耐久: ${meta.hpStr} | 威胁: ${meta.dmgStr}</div><div class="e-desc">${meta.desc}</div>` : `<div class="e-name">未知目标 ???</div><div class="e-desc">需要成功突破该空域后，战术终端方可解密此实体数据。</div>`;
+            card.innerHTML = `<div class="enemy-canvas-wrapper">${canvasHtml}</div><div class="enemy-info">${infoHtml}</div>`; grid.appendChild(card);
+            
+            setTimeout(() => {
+                let pCanvas = document.getElementById(`prev-${eid}`);
+                if(pCanvas) {
+                    let pCtx = pCanvas.getContext('2d'); let capId = eid.charAt(0).toUpperCase() + eid.slice(1);
+                    pCtx.translate(40, 40); let scale = eid.startsWith('boss') ? 0.3 : 1; pCtx.scale(scale, scale);
+                    let dummy = new BaseEnemy(eid, 0, 0); 
+                    if (isStageCleared) { EnemyRenderer[`draw${capId}`](pCtx, -dummy.width/2, -dummy.height/2, dummy.width, dummy.height, false, dummy.color, 0); } 
+                    else { pCtx.filter = 'brightness(0) invert(0.2)'; EnemyRenderer[`draw${capId}`](pCtx, -dummy.width/2, -dummy.height/2, dummy.width, dummy.height, false, "#000", 0); }
+                }
+            }, 10);
+        });
+    },
+
+    renderShop() {
+        document.getElementById('shop-coin-count').innerText = SaveSystem.data.coins.toLocaleString();
+        const UP_ICON = { maxHp: '🛡️', damage: '⚔️', fireRate: '⏱️', speed: '🚀', wingmanCount: '🛸', wingmanDmg: '🔫', wingmanRate: '⚡' };
+        const genCard = (key, stat) => {
+            let isMax = stat.lvl >= stat.maxLvl; let canBuy = SaveSystem.data.coins >= stat.cost && !isMax;
+            let ico = UP_ICON[key] || '🔧';
+            return `<div class="upgrade-card"><div class="up-title up-title-ic"><span class="card-icon">${ico}</span><span>${stat.name}</span><span style="font-size:12px; color:var(--primary); margin-left:8px;">Lv.${stat.lvl}/${stat.maxLvl}</span></div><div class="up-desc">底层系统覆写，增强战机硬实力。</div><div class="up-stats">OUTPUT: ${stat.val} ${isMax ? "" : `<span style="color:#0ff;"> ➔ ${stat.val + stat.inc}</span>`}</div><div class="up-action"><span class="up-price">${isMax ? "SYS_MAX" : "$"+stat.cost.toLocaleString()}</span><button class="buy-btn" ${canBuy ? "" : "disabled"} onclick="UI.buyUpgrade('${key}')">${isMax ? "已满级" : "升级"}</button></div></div>`;
+        };
+        document.getElementById('panel-main').innerHTML = genCard('maxHp', SaveSystem.data.upgrades.maxHp) + genCard('damage', SaveSystem.data.upgrades.damage) + genCard('fireRate', SaveSystem.data.upgrades.fireRate) + genCard('speed', SaveSystem.data.upgrades.speed);
+        document.getElementById('panel-wingman').innerHTML = genCard('wingmanCount', SaveSystem.data.upgrades.wingmanCount) + genCard('wingmanDmg', SaveSystem.data.upgrades.wingmanDmg) + genCard('wingmanRate', SaveSystem.data.upgrades.wingmanRate) + `<div class="upgrade-card" style="justify-content:center; align-items:center; text-align:center;"><div style="color:var(--primary); font-size:24px; margin-bottom:10px;">无人机阵列</div><div style="color:#888; font-size:14px;">自动火控，分担防线压力。</div></div>`;
+        let skinHtml = "";
+        SaveSystem.data.skins.forEach(skin => {
+            let isEquipped = SaveSystem.data.equippedSkin === skin.color; let canAction = isEquipped ? false : (skin.owned || SaveSystem.data.coins >= skin.cost);
+            let btnColor = isEquipped ? "rgba(255,255,255,0.2)" : (skin.owned ? "rgba(0,150,255,0.5)" : "rgba(0,255,0,0.3)");
+            let priceText = skin.cost === Infinity ? "成就限定" : (skin.owned ? "OWNED" : "$"+skin.cost);
+            let btnText = isEquipped ? "已部署" : (skin.owned ? "换装" : (skin.cost === Infinity ? "未解锁" : "购买"));
+            skinHtml += `<div class="upgrade-card" style="border: 2px solid ${isEquipped?skin.color:'rgba(255,255,255,0.05)'}; border-left: 8px solid ${skin.color}"><div class="up-title" style="color:${skin.color}; text-shadow:0 0 10px ${skin.color};">${skin.name}</div><div class="up-desc" style="display:flex; align-items:center;"><div style="width:25px; height:25px; background:${skin.color}; border-radius:50%; margin-right:15px; box-shadow: 0 0 10px ${skin.color}"></div>${skin.owned ? "模块已下载" : (skin.cost === Infinity ? "完成特定成就解锁" : "需星际信用点解密")}</div><div class="up-action"><span class="up-price" style="color:${skin.owned?'#aaa':'#ffd700'};">${priceText}</span><button class="buy-btn" style="background:${btnColor};" ${canAction?"":"disabled"} onclick="UI.buySkin('${skin.id}')">${btnText}</button></div></div>`;
+        });
+        document.getElementById('panel-skins').innerHTML = skinHtml;
+        let weaponHtml = "";
+        for (let wid in WEAPON_DB) {
+            let w = WEAPON_DB[wid];
+            let isLinear = wid === 'linear';
+            let owned = isLinear || (SaveSystem.data.weapons[wid] && SaveSystem.data.weapons[wid].owned);
+            let equipped = SaveSystem.data.weaponModule === wid;
+            let canBuy = !owned && SaveSystem.data.coins >= w.cost;
+            let stats = `伤害 x${w.dmg || 1} · 射速 x${w.rate}` + (w.pellets ? ` · ${w.pellets} 发` : '') + (w.pierce ? ` · 穿透 ${w.pierce}` : '') + (w.homing ? ' · 追踪' : '') + (w.spread ? ` · 扩散 ${w.spread}°` : '');
+            let tagHtml = equipped ? `<span class="weapon-tag" style="color:var(--primary); border-color:var(--primary);">使用中</span>` : (owned ? `<span class="weapon-tag" style="color:var(--success); border-color:var(--success);">已拥有</span>` : `<span class="weapon-tag" style="color:#888; border-color:#444;">未解锁</span>`);
+            let btnHtml = equipped ? `<button class="buy-btn" style="background:rgba(255,255,255,0.2);" disabled>已装备</button>`
+                : (owned ? `<button class="buy-btn" style="background:rgba(0,150,255,0.4);" onclick="UI.equipWeapon('${wid}')">装备</button>`
+                : `<button class="buy-btn" ${canBuy ? '' : 'disabled'} onclick="UI.buyWeapon('${wid}')">购买并装备</button>`);
+            weaponHtml += `<div class="upgrade-card"><div class="up-title up-title-ic"><span class="card-icon" style="border-color:rgba(255,255,255,0.2);">${w.icon || '🔫'}</span><span>${w.name}</span>${tagHtml}</div><div class="up-desc">${w.desc}</div><div class="up-stats">${stats}</div><div class="up-action"><span class="up-price">${owned ? (equipped ? "EQUIPPED" : "OWNED") : "$"+w.cost.toLocaleString()}</span>${btnHtml}</div></div>`;
+        }
+        document.getElementById('panel-weapons').innerHTML = weaponHtml;
+        let chipHtml = "";
+        for (let cid in CHIP_DB) {
+            let c = CHIP_DB[cid];
+            let owned = SaveSystem.data.chips.owned.indexOf(cid) >= 0;
+            let equipped = SaveSystem.data.equippedChips.indexOf(cid) >= 0;
+            let canBuy = !owned && SaveSystem.data.coins >= c.cost;
+            let canEquip = owned && !equipped && SaveSystem.data.equippedChips.length < 2;
+            let tagHtml = equipped ? `<span class="weapon-tag" style="color:var(--primary); border-color:var(--primary);">已安装</span>` : (owned ? `<span class="weapon-tag" style="color:var(--success); border-color:var(--success);">已拥有</span>` : `<span class="weapon-tag" style="color:#888; border-color:#444;">未解锁</span>`);
+            let btnHtml = equipped ? `<button class="buy-btn" style="background:rgba(255,255,255,0.2);" disabled>已安装</button>`
+                : (owned ? `<button class="buy-btn" style="background:rgba(0,150,255,0.4);" ${canEquip ? "" : "disabled"} onclick="UI.equipChip('${cid}')">安装</button>`
+                : `<button class="buy-btn" ${canBuy ? '' : 'disabled'} onclick="UI.buyChip('${cid}')">购买并安装</button>`);
+            chipHtml += `<div class="upgrade-card" style="border-left: 8px solid ${c.color};"><div class="up-title up-title-ic"><span class="card-icon" style="border-color:${c.color}; color:${c.color};">${c.icon}</span><span style="color:${c.color};">${c.name}</span><span class="chip-tag ${c.cat}">${CHIP_CAT_NAME[c.cat]}</span>${tagHtml}</div><div class="up-desc">${c.desc}</div><div class="up-action"><span class="up-price">${owned ? (equipped ? "INSTALLED" : "OWNED") : "$"+c.cost.toLocaleString()}</span>${btnHtml}</div></div>`;
+        }
+        document.getElementById('panel-chips').innerHTML = chipHtml + (SaveSystem.data.equippedChips.length >= 2 ? `<div style="color:#888; font-size:12px; margin-top:10px;">芯片插槽已满 (2/2)。</div>` : `<div style="color:#888; font-size:12px; margin-top:10px;">已安装 ${SaveSystem.data.equippedChips.length}/2 枚芯片。芯片对全局生效，不限于单次远征。</div>`);
+    },
+    
+    buyUpgrade(key) {
+        let stat = SaveSystem.data.upgrades[key];
+        if(SaveSystem.data.coins >= stat.cost && stat.lvl < stat.maxLvl) {
+            SaveSystem.data.coins -= stat.cost; stat.val += stat.inc; stat.lvl++; stat.cost = Math.floor(stat.cost * 1.5);
+            SaveSystem.save(); this.renderShop();
+        }
+    },
+    buySkin(id) {
+        let skin = SaveSystem.data.skins.find(s => s.id === id);
+        if(skin.owned) { SaveSystem.data.equippedSkin = skin.color; } 
+        else if(SaveSystem.data.coins >= skin.cost) { SaveSystem.data.coins -= skin.cost; skin.owned = true; SaveSystem.data.equippedSkin = skin.color; }
+        SaveSystem.save(); this.renderShop();
+    },
+    renderEvolutionScreen(worldId) {
+        let options = EVOLUTION_DB[worldId] || [];
+        let el = document.getElementById('evo-options'); el.innerHTML = "";
+        document.getElementById('evo-note').innerText = `已解锁: 世界 ${worldId} 分支进化。选择一项战术改造，构筑你的战斗流派——选择后不可更改。`;
+        options.forEach(ev => {
+            let card = document.createElement('div');
+            card.className = 'evo-card';
+            card.style.borderColor = ev.color;
+            card.innerHTML = `<span class="evo-ico">${ev.icon}</span><div class="evo-name" style="color:${ev.color};">${ev.name}</div>
+                <div class="evo-id">// ${ev.id.toUpperCase()} 模块</div>
+                <div class="evo-desc">${ev.desc}</div>
+                <div class="evo-fx">${ev.fx}</div>
+                <button class="btn btn-gold" onclick="UI.selectEvolution(${worldId}, '${ev.id}')">部署此改造</button>`;
+            el.appendChild(card);
+        });
+    },
+    selectEvolution(worldId, id) {
+        SaveSystem.setEvolution(worldId, id);
+        GameEngine.pendingEvolution = null;
+        UI.showMenu('level-select-screen');
+        GameEngine.checkAchievements();
+        Utils.showMsg(`进化已部署: ${EVOLUTION_DB[worldId].find(e => e.id === id).name}`, EVOLUTION_DB[worldId].find(e => e.id === id).color);
+    },
+    buyChip(id) {
+        let c = CHIP_DB[id]; if (!c) return;
+        if (SaveSystem.data.chips.owned.indexOf(id) >= 0) return;
+        if (SaveSystem.data.coins < c.cost) return;
+        if (SaveSystem.data.equippedChips.length >= 2) { Utils.showMsg('芯片插槽已满!', '#f44'); return; }
+        SaveSystem.data.coins -= c.cost;
+        SaveSystem.data.chips.owned.push(id);
+        SaveSystem.data.equippedChips.push(id);
+        SaveSystem.save(); this.renderShop(); GameEngine.checkAchievements(); Utils.showMsg(`芯片已安装: ${c.name}`, c.color);
+    },
+    equipChip(id) {
+        if (SaveSystem.data.chips.owned.indexOf(id) < 0) return;
+        if (SaveSystem.data.equippedChips.indexOf(id) >= 0) return;
+        if (SaveSystem.data.equippedChips.length >= 2) { Utils.showMsg('芯片插槽已满!', '#f44'); return; }
+        SaveSystem.data.equippedChips.push(id);
+        SaveSystem.save(); this.renderShop(); GameEngine.checkAchievements(); Utils.showMsg('芯片已安装', CHIP_DB[id].color);
+    }
+};
+
+document.getElementById('btn-quick-start').onclick = () => { GameEngine.initLevel(SaveSystem.data.unlockedWorld, SaveSystem.data.unlockedStage); };
+document.getElementById('btn-level-select').onclick = () => { UI.selectedWorld = SaveSystem.data.unlockedWorld; UI.selectedStage = SaveSystem.data.unlockedStage; UI.showMenu('level-select-screen'); };
+document.getElementById('btn-shop-menu').onclick = () => { UI.showMenu('shop-screen'); };
+
+document.getElementById('btn-close-ls').onclick = () => { UI.showMenu('main-menu'); };
+document.getElementById('btn-deploy').onclick = () => { UI.hideAll(); GameEngine.initLevel(UI.selectedWorld, UI.selectedStage); };
+
+document.getElementById('btn-sc-next').onclick = () => { 
+    if (GameEngine.pendingEvolution) {
+        UI.renderEvolutionScreen(GameEngine.pendingEvolution);
+        UI.showMenu('evolution-screen');
+        return;
+    }
+    if(GameEngine.currentWorld === 5 && GameEngine.currentStage === 5) { GameEngine.changeState(STATE.VICTORY); } 
+    else { UI.selectedWorld = SaveSystem.data.unlockedWorld; UI.selectedStage = SaveSystem.data.unlockedStage; UI.showMenu('level-select-screen'); }
+};
+
+document.getElementById('btn-endless').onclick = () => { GameEngine.initLevel(5, 5, 'endless'); };
+document.getElementById('btn-achievements').onclick = () => { UI.showMenu('achievements-screen'); };
+document.getElementById('btn-close-ach').onclick = () => { UI.showMenu('main-menu'); };
+document.getElementById('btn-resume').onclick = () => { GameEngine.togglePause(); };
+document.getElementById('btn-abandon').onclick = () => { GameEngine.pauseHeld = false; GameEngine.changeState(STATE.MENU); UI.showMenu('main-menu'); };
+
+document.getElementById('btn-restart').onclick = () => { GameEngine.pauseHeld = false; GameEngine.changeState(STATE.PLAYING); GameEngine.initLevel(GameEngine.currentWorld, GameEngine.currentStage, GameEngine.mode); };
+document.getElementById('btn-go-shop-from-die').onclick = () => { UI.showMenu('shop-screen'); };
+document.getElementById('btn-quit-to-menu').onclick = () => { UI.showMenu('main-menu'); };
+
+document.getElementById('btn-close-shop').onclick = () => { 
+    if(GameEngine.state === STATE.GAMEOVER) UI.showMenu('game-over'); else UI.showMenu('main-menu'); 
+};
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = (e) => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.shop-panel').forEach(p => p.classList.remove('active'));
+        e.target.classList.add('active'); document.getElementById(e.target.dataset.target).classList.add('active');
+    };
+});
+
+document.getElementById('btn-victory-back').onclick = () => { UI.showMenu('level-select-screen'); };
+
+mapMgr.setTheme(1);
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
