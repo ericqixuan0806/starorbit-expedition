@@ -2389,7 +2389,7 @@ const GameEngine = {
         if (t.step === 0) {
             titleEl.innerText = '机动测试 (STEP 1/2)';
             subEl.innerText = '移动鼠标或拖动触屏，也可按 [W A S D] 移动战机';
-            if (Input.isUp() || Input.isDown() || Input.isLeft() || Input.isRight()) { t.step = 1; t.frames = 0; AudioSys.playClick(); }
+            if (Input.isUp() || Input.isDown() || Input.isLeft() || Input.isRight() || Input.getPointerTarget()) { t.step = 1; t.frames = 0; AudioSys.playClick(); }
             if (t.frames > 900) { t.done = true; }
         } else if (t.step === 1) {
             titleEl.innerText = '校准武器 (STEP 2/2)';
