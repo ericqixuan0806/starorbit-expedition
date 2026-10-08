@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>星轨战纪 V2.0：远征 (Star-Orbit: Expedition)</title>
     <style>
         /* ==========================================================================
@@ -40,6 +40,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            height: 100dvh;
             width: 100vw;
             background-image: 
                 radial-gradient(circle at center, rgba(0,255,255,0.03) 0%, transparent 60%),
@@ -65,12 +66,13 @@
            ========================================================================== */
         #game-wrapper {
             position: relative;
-            width: 800px;
-            height: 900px;
-            max-width: 100vw;
-            max-height: 100vh;
+            width: min(800px, 100vw, 88.8889vh);
+            width: min(800px, 100vw, 88.8889dvh);
+            height: auto;
+            aspect-ratio: 8 / 9;
+            container: game / inline-size;
             background: #000000;
-            border: 1px solid var(--panel-border);
+            outline: 1px solid var(--panel-border);
             box-shadow: 0 0 40px rgba(0, 0, 0, 1), 0 0 20px var(--primary-glow) inset;
             border-radius: 8px;
             overflow: hidden;
@@ -218,6 +220,15 @@
             font-size: 50px; font-weight: 900; color: #fff; text-shadow: 0 0 20px #fff, 0 0 40px var(--primary);
             pointer-events: none; opacity: 0; transition: opacity 0.5s; z-index: 100; letter-spacing: 8px; text-align: center;
         }
+        #save-recovery {
+            position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 110;
+            width: min(94%, 560px); padding: 10px 14px; border: 1px solid #ffb84d; border-radius: 8px;
+            background: rgba(35, 22, 5, 0.96); color: #ffe2b0; font: 13px/1.45 Arial, sans-serif;
+            box-shadow: 0 4px 22px rgba(0,0,0,.55); pointer-events: auto;
+        }
+        #save-recovery[hidden] { display: none; }
+        #save-recovery-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+        #save-recovery button { background: #32230e; color: #fff; border: 1px solid #d99a3d; border-radius: 4px; padding: 5px 9px; cursor: pointer; }
 
         /* ==========================================================================
            4. 覆盖层与通用组件 (Overlays & UI Components)
@@ -379,12 +390,16 @@
         #combo-mult { font-size: 14px; color: var(--primary); letter-spacing: 2px; }
 
         #ability-bar {
-            position: absolute; bottom: 22px; left: 22px; display: flex; gap: 10px; z-index: 11; pointer-events: none;
+            position: absolute; bottom: 22px; left: 22px; display: flex; gap: 10px; z-index: 11; pointer-events: auto;
         }
         .ability-slot {
             width: 42px; height: 110px; background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
-            border-radius: 6px; position: relative; overflow: hidden;
+            border-radius: 6px; position: relative; overflow: hidden; padding: 0; color: inherit; cursor: pointer;
+            -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
         }
+        .ability-slot:hover { border-color: rgba(0,255,255,0.72); background: rgba(0,24,38,0.86); }
+        .ability-slot:active, .ability-slot.is-pressed { transform: translateY(1px); filter: brightness(1.4); }
+        .ability-slot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
         .ability-fill { position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; transition: height 0.1s; }
         .ability-label { position: absolute; bottom: 2px; width: 100%; text-align: center; font-size: 12px; color: #fff; font-weight: bold; font-family: var(--font-tech); z-index: 2; text-shadow: 0 0 6px #000; }
         .ability-name { position: absolute; top: 3px; width: 100%; text-align: center; font-size: 9px; color: #ccc; z-index: 2; text-shadow: 0 0 4px #000; }
@@ -617,6 +632,123 @@
             background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 2px, transparent 4px);
             mix-blend-mode: multiply; opacity: 0.5;
         }
+
+        /* Keep responsive UI inside the proportionally scaled game surface. */
+        .overlay {
+            justify-content: flex-start;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 12px 8px;
+        }
+
+        #hud { padding: 2.5cqw; }
+        .hud-panel { min-width: 0; }
+        .bar-container { width: min(32.5cqw, 260px); max-width: 100%; }
+        #boss-ui { width: min(75cqw, 600px); }
+
+        #level-select-container {
+            min-height: 0;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .ls-left-panel, .ls-right-panel { min-width: 0; min-height: 0; }
+        #stage-clear-panel, #pause-panel, #ach-screen-panel,
+        #evolution-screen .evo-panel {
+            max-width: 100%;
+            max-height: 100%;
+            overflow-y: auto;
+        }
+        #shop-container { min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; }
+
+        @container game (min-width: 600px) {
+            .overlay { justify-content: center; }
+        }
+
+        @container game (max-width: 599px) {
+            #hud { padding: 2cqw; }
+            .hud-panel { padding: 7px 9px; }
+            .status-title { font-size: clamp(9px, 2.8cqw, 13px); margin-bottom: 3px; }
+            .bar-container { width: 38cqw; height: 12px; }
+            .hud-score { font-size: clamp(11px, 4cqw, 18px); margin-bottom: 2px; }
+            .coin-display { font-size: clamp(14px, 5cqw, 24px); margin-bottom: 2px; }
+            .level-display { font-size: clamp(12px, 4cqw, 18px); }
+            #boss-ui { top: clamp(50px, 10cqw, 90px); width: 82cqw; padding: 8px; }
+            #boss-name { font-size: clamp(13px, 5cqw, 22px); letter-spacing: 2px; margin-bottom: 5px; }
+            .boss-bar-bg { height: 14px; }
+
+            #level-select-container {
+                flex-direction: column;
+                width: 100%; height: 100%;
+                padding: 10px; gap: 8px;
+                overflow: hidden;
+            }
+            .ls-left-panel {
+                width: 100%; flex: 0 0 38%;
+                border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.1);
+                padding: 0 0 8px;
+            }
+            .ls-right-panel { width: 100%; flex: 1 1 0; padding: 0; overflow-y: auto; }
+            .stage-header { gap: 8px; }
+            .stage-title { font-size: clamp(16px, 6cqw, 28px); }
+            .stage-stats { gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+            .enemy-grid { grid-template-columns: 1fr; gap: 8px; }
+            .enemy-card { padding: 8px; gap: 8px; }
+            .enemy-canvas-wrapper { width: 56px; height: 56px; flex: 0 0 56px; }
+
+            #stage-clear-panel { padding: 16px; }
+            #stage-clear-panel, #pause-panel, #ach-screen-panel,
+            #evolution-screen .evo-panel { width: 100%; }
+            .rank-display { font-size: clamp(52px, 18cqw, 100px); margin: 8px 0; }
+            .score-breakdown { padding: 12px; font-size: 14px; margin-bottom: 12px; }
+            .bonus-coins { font-size: 19px; margin-bottom: 12px; }
+
+            #shop-container { padding: 12px; }
+            .shop-header { align-items: flex-start; flex-wrap: wrap; gap: 8px; padding-bottom: 10px; margin-bottom: 10px; }
+            .shop-tabs { gap: 4px; flex-wrap: wrap; }
+            .tab-btn { padding: 7px 9px; font-size: 14px; }
+            .shop-content { min-height: 0; padding-right: 4px; }
+            .shop-panel { grid-template-columns: 1fr; gap: 10px; }
+            .upgrade-card { padding: 12px; }
+            .up-title { font-size: 17px; }
+            .up-desc { font-size: 13px; }
+
+            #pause-panel { padding: 16px; }
+            .pause-grid { flex-direction: column; gap: 8px; margin: 10px 0; }
+            .pause-col { padding: 10px; }
+            #ach-screen-panel { padding: 12px; }
+            .ach-item { gap: 8px; padding: 8px; }
+            .ach-name { font-size: 14px; }
+
+            #evolution-screen .evo-panel { padding: 16px; }
+            .evo-cards { flex-direction: column; gap: 10px; margin-top: 14px; }
+            .evo-card { padding: 14px; }
+            .evo-icon { font-size: 36px; margin-bottom: 6px; }
+            .evo-name { font-size: 18px; }
+            h1 { font-size: clamp(28px, 12cqw, 54px); letter-spacing: 3px; }
+            h2 { font-size: clamp(19px, 7cqw, 30px); margin-bottom: 10px; }
+            .menu-title { font-size: clamp(26px, 10cqw, 44px); letter-spacing: 3px; }
+            .btn { padding: 10px 18px; font-size: 15px; margin: 6px; letter-spacing: 1px; }
+            .menu-stats { gap: 5px; margin-bottom: 12px; }
+            .ms-item { padding: 5px 8px; font-size: 11px; }
+        }
+
+        @container game (max-width: 329px) {
+            .touch-pad, .touch-actions { gap: 3px; }
+            .touch-btn { min-width: 34px; min-height: 36px; padding: 2px; font-size: 11px; }
+        }
+
+        @media (pointer: coarse) {
+            .touch-pad { grid-template: repeat(3, min(12cqw, 54px)) / repeat(3, min(12cqw, 54px)); }
+            .touch-actions { grid-template-columns: repeat(3, min(11.5cqw, 50px)); }
+            #ability-bar {
+                left: 50%; bottom: max(104px, calc(env(safe-area-inset-bottom) + 96px));
+                transform: translateX(-50%); gap: 6px;
+            }
+            #ability-bar .ability-slot { width: 46px; height: 68px; border-radius: 8px; }
+            #ability-bar .ability-name { font-size: 8px; }
+            #ability-bar .ability-key { top: 16px; }
+            #ability-bar { display: none; }
+        }
     </style>
 </head>
 <body>
@@ -667,21 +799,21 @@
         </div>
         
         <div id="ability-bar">
-            <div class="ability-slot" id="ab-q">
+            <div class="ability-slot" id="ab-q" role="button" tabindex="0" data-ability="q" aria-label="Q 清场技能，点击发动">
                 <div class="ability-key">Q</div>
                 <div class="ability-ico" style="color:#ff5555;">💥</div>
                 <div class="ability-name">清场</div>
                 <div class="ability-fill" style="background:linear-gradient(0deg,#660000,#ff3333);"></div>
                 <div class="ability-label">100%</div>
             </div>
-            <div class="ability-slot" id="ab-e">
+            <div class="ability-slot" id="ab-e" role="button" tabindex="0" data-ability="e" aria-label="E 护盾技能，点击发动">
                 <div class="ability-key">E</div>
                 <div class="ability-ico" style="color:#00ffff;">🛡</div>
                 <div class="ability-name">无敌</div>
                 <div class="ability-fill" style="background:linear-gradient(0deg,#003366,#00ffff);"></div>
                 <div class="ability-label">100%</div>
             </div>
-            <div class="ability-slot" id="ab-shift">
+            <div class="ability-slot" id="ab-shift" role="button" tabindex="0" data-ability="f" aria-label="F 冲击波，点击发动">
                 <div class="ability-key">F</div>
                 <div class="ability-ico" style="color:#ffd700;">⚡</div>
                 <div class="ability-name">过载</div>
@@ -694,6 +826,16 @@
     </div>
 
     <div id="sys-msg" class="sys-msg">INITIATING...</div>
+    <div id="save-recovery" role="status" aria-live="polite" hidden>
+        <div id="save-recovery-message"></div>
+        <div id="save-recovery-actions">
+            <button id="btn-save-export" type="button">导出存档</button>
+            <button id="btn-save-export-current" type="button" hidden>导出当前进度</button>
+            <button id="btn-save-import" type="button">导入存档</button>
+            <input id="save-import-file" type="file" accept="application/json,.json" hidden>
+            <button id="btn-save-dismiss" type="button">关闭提示</button>
+        </div>
+    </div>
 
     <div id="cinematic-top"></div>
     <div id="cinematic-bottom"></div>
@@ -855,13 +997,12 @@
                 <div class="pause-col">
                     <h4>操作指令</h4>
                     <p>
-                        鼠标移动 / 触屏拖动 / [W A S D] — 机动<br>
-                        [空格] / [K] — 主炮开火<br>
-                        [SHIFT] 按住 — 专注模式 (低速精密瞄准)<br>
-                        [F] — 过载冲击波 (擦弹充满能量后)<br>
-                        [Q] — 全屏清场炸弹<br>
-                        [E] — 绝对无敌护盾 (3s)<br>
-                        [ESC] / [P] — 暂停<br>
+                        鼠标移动控制战机，按住鼠标左键开火。触屏拖动可移动并开火，也可用「▲ ◀ ▼ ▶」和「开火」按钮；键盘用 [W A S D] / 方向键移动、[空格] / [K] 开火。<br>
+                        [SHIFT] /「专注」按住 — 减速移动，便于精细操控（不耗能）<br>
+                        [Q] /「Q」— 清场炸弹；能量达到 100% 才可发动<br>
+                        [E] /「E」— 护盾；能量达到 70% 才可发动，持续 3 秒<br>
+                        [F] /「F」— 过载冲击波；过载槽达到 100% 才可发动<br>
+                        [ESC] / [P] /「Ⅱ」— 暂停；点「继续游戏」手动恢复<br>
                         [M] — 静音切换
                     </p>
                 </div>
@@ -937,52 +1078,155 @@ const DEFAULT_SKINS = [
     { id: 'magma', color: '#ff4500', name: '熔金战魂 (成就限定)', cost: Infinity, owned: false }
 ];
 
+const SAVE_KEY = 'StarOrbitSaveV2';
+const CURRENT_SAVE_VERSION = 1;
+const createDefaultSaveData = () => ({
+    coins: 0,
+    unlockedWorld: 1,
+    unlockedStage: 1,
+    stageRecords: {},
+    upgrades: JSON.parse(JSON.stringify(DEFAULT_UPGRADES)),
+    skins: JSON.parse(JSON.stringify(DEFAULT_SKINS)),
+    equippedSkin: '#00ffff',
+    achievements: {},
+    kills: {},
+    weapons: { pierce: { owned: false }, homing: { owned: false }, shotgun: { owned: false } },
+    weaponModule: 'linear',
+    chips: { owned: [], equipped: {} },
+    equippedChips: [],
+    evolutions: {},
+    endlessUnlocked: false,
+    maxEndlessWave: 0,
+    endlessRecords: [],
+    stats: { grazes: 0, shockwaves: 0, eliteKills: 0, bossKills: 0, coinsEarned: 0, minis: 0 }
+});
 const SaveSystem = {
-    data: {
-        coins: 0,
-        unlockedWorld: 1, 
-        unlockedStage: 1,
-        stageRecords: {}, 
-        upgrades: JSON.parse(JSON.stringify(DEFAULT_UPGRADES)),
-        skins: JSON.parse(JSON.stringify(DEFAULT_SKINS)),
-        equippedSkin: '#00ffff',
-        achievements: {},
-        kills: {},
-        weapons: { pierce: { owned: false }, homing: { owned: false }, shotgun: { owned: false } },
-        weaponModule: 'linear',
-        chips: { owned: [], equipped: {} },
-        equippedChips: [],
-        evolutions: {},
-        endlessUnlocked: false,
-        maxEndlessWave: 0,
-        endlessRecords: [],
-        stats: { grazes: 0, shockwaves: 0, eliteKills: 0, bossKills: 0, coinsEarned: 0, minis: 0 }
+    data: createDefaultSaveData(),
+    recoveryRaw: null,
+    noticeShown: false,
+    showRecovery(message, raw = null) {
+        if (raw !== null) this.recoveryRaw = raw;
+        const panel = document.getElementById('save-recovery');
+        if (panel) {
+            const messageEl = document.getElementById('save-recovery-message');
+            messageEl.textContent = message;
+            messageEl.hidden = false;
+            document.getElementById('btn-save-dismiss').hidden = false;
+            document.getElementById('btn-save-export-current').hidden = this.recoveryRaw !== null;
+            panel.hidden = false;
+        }
+        this.noticeShown = true;
+    },
+    validateAndNormalize(rawData) {
+        const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+        const requireObject = (value, label) => { if (!isObject(value)) throw new Error(`${label}格式无效`); };
+        const requireArray = (value, label) => { if (!Array.isArray(value)) throw new Error(`${label}格式无效`); };
+        const requireNumber = (value, label, min = -Infinity) => {
+            if (typeof value !== 'number' || !Number.isFinite(value) || value < min) throw new Error(`${label}数值无效`);
+        };
+        requireObject(rawData, '存档');
+        if (rawData.version !== undefined && (!Number.isInteger(rawData.version) || rawData.version < 1)) throw new Error('存档版本无效');
+        if (rawData.version > CURRENT_SAVE_VERSION) throw new Error('存档来自更新版本，已保留原数据');
+        ['stageRecords', 'upgrades', 'skins', 'achievements', 'kills', 'weapons', 'weaponModule', 'chips', 'equippedChips', 'evolutions', 'endlessUnlocked', 'maxEndlessWave', 'endlessRecords', 'stats'].forEach(key => {
+            if (rawData[key] === undefined) return;
+            if (['skins', 'equippedChips', 'endlessRecords'].includes(key)) requireArray(rawData[key], key);
+            else if (['endlessUnlocked', 'weaponModule'].includes(key)) {
+                const valid = key === 'endlessUnlocked' ? typeof rawData[key] === 'boolean' : typeof rawData[key] === 'string';
+                if (!valid) throw new Error(`${key}格式无效`);
+            } else if (key === 'maxEndlessWave') requireNumber(rawData[key], key, 0);
+            else requireObject(rawData[key], key);
+        });
+        ['coins', 'unlockedWorld', 'unlockedStage'].forEach(key => { if (rawData[key] !== undefined) requireNumber(rawData[key], key, 0); });
+        if (rawData.upgrades) Object.keys(rawData.upgrades).forEach(key => {
+            const item = rawData.upgrades[key]; requireObject(item, `upgrades.${key}`);
+            ['val', 'lvl', 'cost', 'inc', 'maxLvl'].forEach(prop => { if (item[prop] !== undefined) requireNumber(item[prop], `upgrades.${key}.${prop}`); });
+        });
+        if (rawData.skins) rawData.skins.forEach((skin, i) => {
+            requireObject(skin, `skins[${i}]`);
+            if (skin.owned !== undefined && typeof skin.owned !== 'boolean') throw new Error('涂装数据无效');
+            for (const prop of ['id', 'color', 'name']) if (skin[prop] !== undefined && typeof skin[prop] !== 'string') throw new Error('涂装数据无效');
+            if (skin.cost !== undefined && skin.cost !== null) requireNumber(skin.cost, '涂装价格', 0);
+        });
+        if (rawData.endlessRecords) rawData.endlessRecords.forEach((record, i) => {
+            requireObject(record, `endlessRecords[${i}]`);
+            for (const prop of ['wave', 'score']) if (record[prop] !== undefined) requireNumber(record[prop], `endlessRecords[${i}].${prop}`, 0);
+        });
+        if (rawData.stageRecords) Object.keys(rawData.stageRecords).forEach(key => {
+            const record = rawData.stageRecords[key]; requireObject(record, `stageRecords.${key}`);
+            if (record.score !== undefined) requireNumber(record.score, `stageRecords.${key}.score`, 0);
+            if (record.rank !== undefined && typeof record.rank !== 'string') throw new Error(`stageRecords.${key}.rank格式无效`);
+            if (record.noHit !== undefined && typeof record.noHit !== 'boolean') throw new Error(`stageRecords.${key}.noHit格式无效`);
+        });
+        for (const key of ['achievements', 'kills', 'weapons', 'evolutions', 'stats']) {
+            if (rawData[key]) Object.keys(rawData[key]).forEach(name => {
+                const value = rawData[key][name];
+                if (key === 'weapons') {
+                    requireObject(value, `weapons.${name}`);
+                    if (value.owned !== undefined && typeof value.owned !== 'boolean') throw new Error(`weapons.${name}.owned格式无效`);
+                }
+                else if (key === 'stats' && name === 'bossTypes') {
+                    requireObject(value, 'stats.bossTypes');
+                    Object.keys(value).forEach(type => requireNumber(value[type], `stats.bossTypes.${type}`, 0));
+                }
+                else if (typeof value === 'number') requireNumber(value, `${key}.${name}`, 0);
+                else if (key === 'achievements' && typeof value === 'boolean') return;
+                else if (key === 'evolutions' && typeof value === 'string') return;
+                else throw new Error(`${key}.${name}格式无效`);
+            });
+        }
+        if (rawData.chips) {
+            requireObject(rawData.chips, 'chips');
+            if (rawData.chips.owned !== undefined) {
+                requireArray(rawData.chips.owned, 'chips.owned');
+                if (rawData.chips.owned.some(value => typeof value !== 'string')) throw new Error('chips.owned格式无效');
+            }
+            if (rawData.chips.equipped !== undefined) {
+                requireObject(rawData.chips.equipped, 'chips.equipped');
+                if (Object.values(rawData.chips.equipped).some(value => value !== null && typeof value !== 'string')) throw new Error('chips.equipped格式无效');
+            }
+        }
+        if (rawData.equippedChips && rawData.equippedChips.some(value => typeof value !== 'string')) throw new Error('equippedChips格式无效');
+        const normalized = { ...createDefaultSaveData(), ...rawData };
+        normalized.coins = rawData.coins === undefined ? normalized.coins : rawData.coins;
+        normalized.unlockedWorld = rawData.unlockedWorld === undefined ? normalized.unlockedWorld : rawData.unlockedWorld;
+        normalized.unlockedStage = rawData.unlockedStage === undefined ? normalized.unlockedStage : rawData.unlockedStage;
+        for (const key of ['stageRecords', 'weapons', 'kills', 'achievements', 'evolutions', 'stats']) normalized[key] = { ...normalized[key], ...(rawData[key] || {}) };
+        normalized.upgrades = { ...normalized.upgrades, ...(rawData.upgrades || {}) };
+        for (const key in DEFAULT_UPGRADES) {
+            const source = rawData.upgrades && rawData.upgrades[key];
+            normalized.upgrades[key] = { ...DEFAULT_UPGRADES[key], ...(normalized.upgrades[key] || {}) };
+            if (!source) normalized.upgrades[key] = { ...DEFAULT_UPGRADES[key] };
+            const item = normalized.upgrades[key];
+            for (const prop of ['val', 'lvl', 'cost', 'inc', 'maxLvl']) if (typeof item[prop] !== 'number' || !Number.isFinite(item[prop])) throw new Error(`upgrades.${key}.${prop}无效`);
+            if (item.cost < DEFAULT_UPGRADES[key].cost) item.cost = DEFAULT_UPGRADES[key].cost;
+        }
+        normalized.skins = DEFAULT_SKINS.map(base => {
+            const savedSkin = (rawData.skins || []).find(item => item && item.id === base.id);
+            const merged = { ...base, ...(savedSkin || {}) };
+            if (base.cost === Infinity && merged.cost === null) merged.cost = Infinity;
+            return merged;
+        });
+        normalized.equippedSkin = typeof rawData.equippedSkin === 'string' ? rawData.equippedSkin : normalized.equippedSkin;
+        normalized.weaponModule = typeof rawData.weaponModule === 'string' ? rawData.weaponModule : normalized.weaponModule;
+        normalized.chips = { ...normalized.chips, ...(rawData.chips || {}) };
+        normalized.chips.owned = Array.isArray(normalized.chips.owned) ? normalized.chips.owned.filter(value => typeof value === 'string') : [];
+        normalized.chips.equipped = normalized.chips.equipped && isObject(normalized.chips.equipped) ? normalized.chips.equipped : {};
+        normalized.equippedChips = Array.isArray(rawData.equippedChips) ? rawData.equippedChips : [];
+        normalized.endlessUnlocked = rawData.endlessUnlocked === undefined ? normalized.endlessUnlocked : rawData.endlessUnlocked;
+        normalized.maxEndlessWave = rawData.maxEndlessWave === undefined ? normalized.maxEndlessWave : rawData.maxEndlessWave;
+        normalized.endlessRecords = Array.isArray(rawData.endlessRecords) ? rawData.endlessRecords : [];
+        normalized.version = CURRENT_SAVE_VERSION;
+        return normalized;
     },
     load() {
         try {
-            let saved = localStorage.getItem('StarOrbitSaveV2');
-            if (saved) {
-                let parsed = JSON.parse(saved);
-                this.data = { ...this.data, ...parsed }; 
-                this.data.upgrades = { ...this.data.upgrades, ...(parsed.upgrades || {}) };
-                this.data.weapons = { ...this.data.weapons, ...(parsed.weapons || {}) };
-                this.data.kills = { ...this.data.kills, ...(parsed.kills || {}) };
-                this.data.achievements = { ...this.data.achievements, ...(parsed.achievements || {}) };
-                this.data.evolutions = { ...this.data.evolutions, ...(parsed.evolutions || {}) };
-                this.data.stats = { ...this.data.stats, ...(parsed.stats || {}) };
-                if (!this.data.chips) this.data.chips = { owned: [], equipped: {} };
-                else {
-                    this.data.chips.owned = this.data.chips.owned || [];
-                    this.data.chips.equipped = this.data.chips.equipped || {};
-                }
-                if (!Array.isArray(this.data.endlessRecords)) this.data.endlessRecords = [];
-                if (!Array.isArray(this.data.equippedChips)) this.data.equippedChips = [];
-                for (let k in DEFAULT_UPGRADES) {
-                    let st = this.data.upgrades[k];
-                    if (st && st.cost < DEFAULT_UPGRADES[k].cost) st.cost = DEFAULT_UPGRADES[k].cost;
-                }
-            }
-        } catch (e) {}
+            const saved = localStorage.getItem(SAVE_KEY);
+            if (!saved) return;
+            try {
+                const normalized = this.validateAndNormalize(JSON.parse(saved));
+                this.data = normalized;
+            } catch (e) { this.showRecovery(`存档未载入：${e.message}。原始数据已保留；导出原档或导入有效存档后才能继续保存。`, saved); }
+        } catch (e) { this.showRecovery('无法读取本机存档。可导入备份；存储恢复后再导出。'); }
     },
     addEndlessRecord(wave, score) {
         this.data.endlessRecords.push({ wave, score, date: Date.now() });
@@ -991,7 +1235,33 @@ const SaveSystem = {
         this.save();
     },
     save() {
-        try { localStorage.setItem('StarOrbitSaveV2', JSON.stringify(this.data)); } catch (e) {}
+        if (this.recoveryRaw !== null) return false;
+        try {
+            const candidate = { ...this.data, version: CURRENT_SAVE_VERSION };
+            localStorage.setItem(SAVE_KEY, JSON.stringify(candidate));
+            this.data.version = CURRENT_SAVE_VERSION;
+        } catch (e) {
+            if (!this.storageErrorShown) { this.storageErrorShown = true; this.showRecovery(`存档写入失败：${e.message || '浏览器存储不可用'}。可导出当前进度留存。`); }
+        }
+    },
+    exportData() { return this.recoveryRaw !== null ? this.recoveryRaw : JSON.stringify({ ...this.data, version: CURRENT_SAVE_VERSION }, null, 2); },
+    exportCurrentData() { return JSON.stringify({ ...this.data, version: CURRENT_SAVE_VERSION }, null, 2); },
+    dismissNotice() {
+        if (this.recoveryRaw !== null) {
+            document.getElementById('save-recovery-message').hidden = true;
+            document.getElementById('btn-save-dismiss').hidden = true;
+        } else document.getElementById('save-recovery').hidden = true;
+    },
+    importText(text) {
+        const parsed = JSON.parse(text);
+        const normalized = this.validateAndNormalize(parsed);
+        localStorage.setItem(SAVE_KEY, JSON.stringify(normalized));
+        this.data = normalized;
+        this.recoveryRaw = null;
+        this.noticeShown = false;
+        this.storageErrorShown = false;
+        const panel = document.getElementById('save-recovery'); if (panel) panel.hidden = true;
+        return true;
     },
     isCleared(world, stage) { return !!this.data.stageRecords[`${world}-${stage}`]; },
     isUnlocked(world, stage) {
@@ -1326,6 +1596,7 @@ class Drop {
 const Input = {
     touchKeys: { up: false, down: false, left: false, right: false, fire: false, q: false, e: false, f: false, focus: false, pause: false },
     touchPointers: new Map(),
+    abilityPointers: new Map(),
     pointer: { x: 0, y: 0, active: false, fire: false, pointers: new Map(), lastPointerType: null },
     keys: { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowLeft:false, ArrowDown:false, ArrowRight:false, " ":false, k:false, K:false,
             q:false, Q:false, e:false, E:false, f:false, F:false, Shift:false, Escape:false, p:false, P:false, m:false, M:false },
@@ -1340,6 +1611,12 @@ const Input = {
         const wrapper = document.getElementById('game-wrapper');
         const canvas = document.getElementById('gameCanvas');
         const isPlaying = () => GameEngine.state === STATE.PLAYING && !GameEngine.paused;
+        const activateAbility = key => {
+            if (!isPlaying()) return;
+            AudioSys.ensureInit();
+            if (key === 'q' || key === 'e') GameEngine.tryAbility(key);
+            else if (key === 'f') GameEngine.tryShockwave();
+        };
         const updatePointer = e => {
             const rect = canvas.getBoundingClientRect();
             this.pointer.x = Math.max(0, Math.min(WIDTH, (e.clientX - rect.left) * WIDTH / rect.width));
@@ -1348,11 +1625,11 @@ const Input = {
             this.pointer.lastPointerType = e.pointerType || 'mouse';
         };
         wrapper.addEventListener('pointermove', e => {
-            if (!isPlaying() || e.target.closest('#touch-controls')) return;
+            if (!isPlaying() || e.target.closest('#touch-controls, [data-ability]')) return;
             if (e.pointerType === 'mouse' || this.pointer.pointers.has(e.pointerId)) updatePointer(e);
         });
         wrapper.addEventListener('pointerdown', e => {
-            if (!isPlaying() || e.target.closest('#touch-controls')) return;
+            if (!isPlaying() || e.target.closest('#touch-controls, [data-ability]')) return;
             if (e.pointerType !== 'mouse') e.preventDefault();
             AudioSys.ensureInit();
             updatePointer(e);
@@ -1370,13 +1647,40 @@ const Input = {
         wrapper.addEventListener('pointerup', releasePointer);
         wrapper.addEventListener('pointercancel', releasePointer);
         wrapper.addEventListener('lostpointercapture', releasePointer);
+        document.querySelectorAll('[data-ability]').forEach(button => {
+            button.addEventListener('pointerdown', e => {
+                if (!isPlaying() || this.abilityPointers.has(e.pointerId)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.abilityPointers.set(e.pointerId, button);
+                button.classList.add('is-pressed');
+                activateAbility(button.dataset.ability);
+                try { button.setPointerCapture(e.pointerId); } catch (err) {}
+            });
+            const releaseAbilityPointer = e => {
+                const pressed = this.abilityPointers.get(e.pointerId);
+                if (!pressed) return;
+                this.abilityPointers.delete(e.pointerId);
+                if (![...this.abilityPointers.values()].includes(pressed)) pressed.classList.remove('is-pressed');
+            };
+            button.addEventListener('pointerup', releaseAbilityPointer);
+            button.addEventListener('pointercancel', releaseAbilityPointer);
+            button.addEventListener('lostpointercapture', releaseAbilityPointer);
+            button.addEventListener('keydown', e => {
+                if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat) return;
+                e.preventDefault();
+                activateAbility(button.dataset.ability);
+            });
+        });
         document.querySelectorAll('#touch-controls [data-input]').forEach(button => {
             button.addEventListener('pointerdown', e => {
                 e.preventDefault();
                 AudioSys.ensureInit();
                 const action = button.dataset.input;
+                if (e.pointerType) this.pointer.lastPointerType = e.pointerType;
                 this.touchPointers.set(e.pointerId, action);
-                this.touchKeys[action] = true;
+                if (action === 'q' || action === 'e' || action === 'f') activateAbility(action);
+                else this.touchKeys[action] = true;
                 button.classList.add('is-pressed');
                 try { button.setPointerCapture(e.pointerId); } catch (err) {}
             });
@@ -1384,15 +1688,36 @@ const Input = {
                 const action = this.touchPointers.get(e.pointerId);
                 if (!action) return;
                 this.touchPointers.delete(e.pointerId);
-                this.touchKeys[action] = Array.from(this.touchPointers.values()).includes(action);
-                button.classList.toggle('is-pressed', this.touchKeys[action]);
+                const actionStillHeld = Array.from(this.touchPointers.values()).includes(action);
+                if (action !== 'q' && action !== 'e' && action !== 'f') this.touchKeys[action] = actionStillHeld;
+                button.classList.toggle('is-pressed', actionStillHeld);
             };
             button.addEventListener('pointerup', release);
-            button.addEventListener('pointercancel', () => this.clearTouch());
+            button.addEventListener('pointercancel', release);
             button.addEventListener('lostpointercapture', release);
         });
-        document.addEventListener('visibilitychange', () => { if (document.hidden) this.clearTouch(); });
+        const handleInterruption = () => {
+            if (document.hidden) this.handlePageInterruption();
+        };
+        document.addEventListener('visibilitychange', handleInterruption);
+        window.addEventListener('blur', () => this.handlePageInterruption());
     },
+    handlePageInterruption() {
+        this.clearKeys();
+        this.clearTouch();
+        this.clearPointer();
+        this.abilityPointers.clear();
+        document.querySelectorAll('[data-ability].is-pressed').forEach(button => button.classList.remove('is-pressed'));
+        if (typeof GameEngine !== 'undefined') {
+            GameEngine.pauseHeld = false;
+            GameEngine.qHeld = false;
+            GameEngine.eHeld = false;
+            GameEngine.fHeld = false;
+            GameEngine.muteHeld = false;
+            if (GameEngine.state === STATE.PLAYING && !GameEngine.paused) GameEngine.togglePause();
+        }
+    },
+    clearKeys() { Object.keys(this.keys).forEach(key => { this.keys[key] = false; }); },
     clearTouch() {
         this.touchPointers.clear();
         Object.keys(this.touchKeys).forEach(action => { this.touchKeys[action] = false; });
@@ -1411,6 +1736,10 @@ const Input = {
     isE() { return this.keys.e || this.keys.E || this.touchKeys.e; },
     isF() { return this.keys.f || this.keys.F || this.touchKeys.f; },
     isShift() { return this.keys.Shift || this.touchKeys.focus; },
+    isTouchContext() {
+        if (this.pointer.lastPointerType) return this.pointer.lastPointerType === 'touch';
+        return !!((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints || 0) > 0);
+    },
     isPause() { return this.keys.Escape || this.keys.p || this.keys.P || this.touchKeys.pause; },
     isMute() { return this.keys.m || this.keys.M; }
 };
@@ -2369,7 +2698,10 @@ const GameEngine = {
         if (this.state !== STATE.PLAYING) return;
         this.paused = !this.paused;
         document.getElementById('game-wrapper').classList.toggle('touch-paused', this.paused);
-        if (this.paused) { Input.clearTouch(); Input.clearPointer(); }
+        if (this.paused) {
+            Input.clearKeys(); Input.clearTouch(); Input.clearPointer();
+            this.pauseHeld = false; this.qHeld = false; this.eHeld = false; this.fHeld = false; this.muteHeld = false;
+        }
         if (this.paused) {
             UI.showPause();
             AudioSys.pauseMusic();
@@ -2388,19 +2720,23 @@ const GameEngine = {
         let subEl = document.getElementById('tut-sub');
         if (t.step === 0) {
             titleEl.innerText = '机动测试 (STEP 1/2)';
-            subEl.innerText = '移动鼠标或拖动触屏，也可按 [W A S D] 移动战机';
+            subEl.innerText = Input.isTouchContext()
+                ? '触屏：拖动战场移动并开火，或点「▲ ◀ ▼ ▶」移动；键盘可用 [W A S D] / 方向键'
+                : '鼠标移动控制战机；也可按 [W A S D] / 方向键移动';
             if (Input.isUp() || Input.isDown() || Input.isLeft() || Input.isRight() || Input.getPointerTarget()) { t.step = 1; t.frames = 0; AudioSys.playClick(); }
             if (t.frames > 900) { t.done = true; }
         } else if (t.step === 1) {
             titleEl.innerText = '校准武器 (STEP 2/2)';
-            subEl.innerText = '按 [空格] 或 [K] 发射主炮';
+            subEl.innerText = Input.isTouchContext()
+                ? '触屏：拖动战场或按「开火」；键盘按 [空格] / [K] 开火'
+                : '按住鼠标左键开火；键盘按 [空格] / [K] 发射主炮';
             if (Input.isFire()) { t.done = true; }
             if (t.frames > 900) { t.done = true; }
         }
         hintEl.style.opacity = t.done ? 0 : 1;
         if (t.done) {
             this.tutorial = null;
-            Utils.showMsg('ENEMY WAVES INCOMING', '#0ff');
+            Utils.showMsg('训练完成！敌机即将来袭', '#0ff');
         }
     },
 
@@ -3080,6 +3416,39 @@ document.getElementById('btn-endless').onclick = () => { GameEngine.initLevel(5,
 document.getElementById('btn-achievements').onclick = () => { UI.showMenu('achievements-screen'); };
 document.getElementById('btn-close-ach').onclick = () => { UI.showMenu('main-menu'); };
 document.getElementById('btn-resume').onclick = () => { GameEngine.togglePause(); };
+const downloadSave = (contents, filename) => {
+    try {
+        const blob = new Blob([contents], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { SaveSystem.showRecovery(`无法导出存档：${e.message || '浏览器不支持下载'}`); }
+};
+document.getElementById('btn-save-export').onclick = () => downloadSave(SaveSystem.exportData(), 'star-orbit-save-recovery.json');
+document.getElementById('btn-save-export-current').onclick = () => downloadSave(SaveSystem.exportCurrentData(), 'star-orbit-current-progress.json');
+document.getElementById('btn-save-import').onclick = () => document.getElementById('save-import-file').click();
+document.getElementById('save-import-file').addEventListener('change', async event => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+        SaveSystem.importText(await file.text());
+        UI.updateHUD();
+        const visible = id => !document.getElementById(id).classList.contains('hidden');
+        if (visible('main-menu')) UI.showMenu('main-menu');
+        else if (visible('shop-screen')) UI.renderShop();
+        else if (visible('level-select-screen')) {
+            UI.selectedWorld = SaveSystem.data.unlockedWorld;
+            UI.selectedStage = SaveSystem.data.unlockedStage;
+            UI.renderLevelSelect();
+        } else if (visible('achievements-screen')) UI.renderAchievements();
+        else if (visible('pause-screen')) UI.showPause();
+        Utils.showMsg('存档已恢复', '#00ff88');
+    } catch (e) { SaveSystem.showRecovery(`导入失败：${e.message || '文件无效'}。当前进度未更改。`); }
+    event.target.value = '';
+});
+document.getElementById('btn-save-dismiss').onclick = () => {
+    SaveSystem.dismissNotice();
+};
 document.getElementById('btn-abandon').onclick = () => { GameEngine.pauseHeld = false; GameEngine.changeState(STATE.MENU); UI.showMenu('main-menu'); };
 
 document.getElementById('btn-restart').onclick = () => { GameEngine.pauseHeld = false; GameEngine.changeState(STATE.PLAYING); GameEngine.initLevel(GameEngine.currentWorld, GameEngine.currentStage, GameEngine.mode); };
